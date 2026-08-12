@@ -1,0 +1,90 @@
+{
+  "info": {
+    "name": "Clinica TP - Semana 1 (Auth)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000" },
+    { "key": "token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/health"
+      }
+    },
+    {
+      "name": "Listar coberturas",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/coberturas"
+      }
+    },
+    {
+      "name": "Registro",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "  console.log('Usuario creado', pm.response.json());",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{base_url}}/auth/registro",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nombre\": \"Lucas\",\n  \"apellido\": \"Diaz\",\n  \"dni\": \"40111222\",\n  \"email\": \"lucas.diaz@test.com\",\n  \"password\": \"claveSegura123\",\n  \"fecha_nacimiento\": \"1999-01-15\",\n  \"id_cobertura\": 1,\n  \"telefono\": \"3424123456\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const data = pm.response.json();",
+              "if (data && data.datos && data.datos.token) {",
+              "  pm.collectionVariables.set('token', data.datos.token);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{base_url}}/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"dni\": \"40111222\",\n  \"password\": \"claveSegura123\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Perfil (protegido)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{base_url}}/auth/perfil"
+      }
+    },
+    {
+      "name": "Perfil sin token (401 esperado)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/auth/perfil"
+      }
+    }
+  ]
+}
