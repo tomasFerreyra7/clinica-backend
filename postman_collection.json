@@ -85,6 +85,14 @@
         "method": "GET",
         "url": "{{base_url}}/auth/perfil"
       }
+    },
+    {
+      "name": "Solo admin - rol no permitido (403 esperado)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{base_url}}/auth/solo-admin"
+      }
     }
   ]
 }
