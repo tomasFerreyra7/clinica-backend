@@ -5,6 +5,8 @@ import pool from './database/db.js';
 import { enviarOk, enviarError } from './utils/respuesta.js';
 import authRoutes from './routes/auth.routes.js';
 import coberturaRoutes from './routes/cobertura.routes.js';
+import especialidadRoutes from './routes/especialidad.routes.js';
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,6 +26,7 @@ app.get('/health', async (req, res) => {
 
 app.use('/auth', authRoutes);
 app.use('/coberturas', coberturaRoutes);
+app.use('/especialidades', especialidadRoutes);
 
 // 404
 app.use((req, res) => {
