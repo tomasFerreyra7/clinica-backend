@@ -153,8 +153,15 @@ function mapearAgenda(fila) {
   };
 }
 
-export async function crearAgenda(body) {
+function assertOwnershipMedico(usuario, idMedicoObjetivo) {
+  if (usuario?.rol === 'medico' && Number(usuario.id) !== Number(idMedicoObjetivo)) {
+    throw new ErrorServicio(403, 'No tiene permisos para gestionar la agenda de otro medico');
+  }
+}
+
+export async function crearAgenda(body, usuario) {
   const datos = parsearDatosAgenda(body);
+  assertOwnershipMedico(usuario, datos.id_medico);
   await validarRelacionesAgenda(datos);
   await validarSolapamiento(datos);
 
@@ -174,11 +181,18 @@ export async function crearAgenda(body) {
   return { id: resultado.insertId, ...datos };
 }
 
-export async function listarAgendas(query = {}) {
+export async function listarAgendas(query = {}, usuario) {
   const filtros = [];
   const valores = [];
 
-  if (query.id_medico !== undefined && query.id_medico !== '') {
+  if (usuario?.rol === 'medico') {
+    if (query.id_medico !== undefined && query.id_medico !== '') {
+      const idQuery = validarEnteroPositivo(Number(query.id_medico), 'id_medico');
+      assertOwnershipMedico(usuario, idQuery);
+    }
+    filtros.push('id_medico = ?');
+    valores.push(Number(usuario.id));
+  } else if (query.id_medico !== undefined && query.id_medico !== '') {
     filtros.push('id_medico = ?');
     valores.push(validarEnteroPositivo(Number(query.id_medico), 'id_medico'));
   }
@@ -211,15 +225,21 @@ function validarIdParam(id) {
   return Number(id);
 }
 
-export async function actualizarAgenda(id, body) {
+export async function actualizarAgenda(id, body, usuario) {
   const idAgenda = validarIdParam(id);
 
-  const [existentes] = await pool.query('SELECT id FROM agenda WHERE id = ?', [idAgenda]);
+  const [existentes] = await pool.query(
+    'SELECT id, id_medico FROM agenda WHERE id = ?',
+    [idAgenda]
+  );
   if (existentes.length === 0) {
     throw new ErrorServicio(404, 'Agenda no encontrada');
   }
 
+  assertOwnershipMedico(usuario, existentes[0].id_medico);
+
   const datos = parsearDatosAgenda(body);
+  assertOwnershipMedico(usuario, datos.id_medico);
   await validarRelacionesAgenda(datos);
   await validarSolapamiento({ ...datos, excluirId: idAgenda });
 
@@ -241,13 +261,18 @@ export async function actualizarAgenda(id, body) {
   return { id: idAgenda, ...datos };
 }
 
-export async function eliminarAgenda(id) {
+export async function eliminarAgenda(id, usuario) {
   const idAgenda = validarIdParam(id);
 
-  const [existentes] = await pool.query('SELECT id FROM agenda WHERE id = ?', [idAgenda]);
+  const [existentes] = await pool.query(
+    'SELECT id, id_medico FROM agenda WHERE id = ?',
+    [idAgenda]
+  );
   if (existentes.length === 0) {
     throw new ErrorServicio(404, 'Agenda no encontrada');
   }
+
+  assertOwnershipMedico(usuario, existentes[0].id_medico);
 
   await pool.query('DELETE FROM agenda WHERE id = ?', [idAgenda]);
   return { id: idAgenda };

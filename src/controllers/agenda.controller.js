@@ -9,7 +9,7 @@ import {
 
 export async function crear(req, res) {
   try {
-    const datos = await crearAgenda(req.body);
+    const datos = await crearAgenda(req.body, req.usuario);
     return enviarOk(res, 201, datos);
   } catch (error) {
     if (error instanceof ErrorServicio) {
@@ -22,7 +22,7 @@ export async function crear(req, res) {
 
 export async function listar(req, res) {
   try {
-    const datos = await listarAgendas(req.query);
+    const datos = await listarAgendas(req.query, req.usuario);
     return enviarOk(res, 200, datos);
   } catch (error) {
     if (error instanceof ErrorServicio) {
@@ -35,7 +35,7 @@ export async function listar(req, res) {
 
 export async function actualizar(req, res) {
   try {
-    const datos = await actualizarAgenda(req.params.id, req.body);
+    const datos = await actualizarAgenda(req.params.id, req.body, req.usuario);
     return enviarOk(res, 200, datos);
   } catch (error) {
     if (error instanceof ErrorServicio) {
@@ -48,7 +48,7 @@ export async function actualizar(req, res) {
 
 export async function eliminar(req, res) {
   try {
-    const datos = await eliminarAgenda(req.params.id);
+    const datos = await eliminarAgenda(req.params.id, req.usuario);
     return enviarOk(res, 200, datos);
   } catch (error) {
     if (error instanceof ErrorServicio) {
