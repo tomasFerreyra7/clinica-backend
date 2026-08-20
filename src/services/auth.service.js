@@ -16,7 +16,7 @@ export async function registrarPaciente({ nombre, apellido, dni, email, password
     throw new ErrorServicio(400, 'Faltan campos obligatorios (nombre, apellido, dni, email, password, fecha_nacimiento, id_cobertura)');
   }
 
-  const [coberturas] = await pool.query('SELECT id FROM cobertura WHERE id = ?', [id_cobertura]);
+  const [coberturas] = await pool.query('SELECT id FROM cobertura WHERE id = ? AND activo = 1', [id_cobertura]);
   if (coberturas.length === 0) {
     throw new ErrorServicio(400, 'La cobertura indicada no existe');
   }
