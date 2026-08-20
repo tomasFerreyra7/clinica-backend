@@ -153,7 +153,7 @@ function mapearAgenda(fila) {
   };
 }
 
-function assertOwnershipMedico(usuario, idMedicoObjetivo) {
+function verificarAgendaDelMedico(usuario, idMedicoObjetivo) {
   if (usuario?.rol === 'medico' && Number(usuario.id) !== Number(idMedicoObjetivo)) {
     throw new ErrorServicio(403, 'No tiene permisos para gestionar la agenda de otro medico');
   }
@@ -161,7 +161,7 @@ function assertOwnershipMedico(usuario, idMedicoObjetivo) {
 
 export async function crearAgenda(body, usuario) {
   const datos = parsearDatosAgenda(body);
-  assertOwnershipMedico(usuario, datos.id_medico);
+  verificarAgendaDelMedico(usuario, datos.id_medico);
   await validarRelacionesAgenda(datos);
   await validarSolapamiento(datos);
 
@@ -188,7 +188,7 @@ export async function listarAgendas(query = {}, usuario) {
   if (usuario?.rol === 'medico') {
     if (query.id_medico !== undefined && query.id_medico !== '') {
       const idQuery = validarEnteroPositivo(Number(query.id_medico), 'id_medico');
-      assertOwnershipMedico(usuario, idQuery);
+      verificarAgendaDelMedico(usuario, idQuery);
     }
     filtros.push('id_medico = ?');
     valores.push(Number(usuario.id));
@@ -236,10 +236,10 @@ export async function actualizarAgenda(id, body, usuario) {
     throw new ErrorServicio(404, 'Agenda no encontrada');
   }
 
-  assertOwnershipMedico(usuario, existentes[0].id_medico);
+  verificarAgendaDelMedico(usuario, existentes[0].id_medico);
 
   const datos = parsearDatosAgenda(body);
-  assertOwnershipMedico(usuario, datos.id_medico);
+  verificarAgendaDelMedico(usuario, datos.id_medico);
   await validarRelacionesAgenda(datos);
   await validarSolapamiento({ ...datos, excluirId: idAgenda });
 
@@ -272,7 +272,7 @@ export async function eliminarAgenda(id, usuario) {
     throw new ErrorServicio(404, 'Agenda no encontrada');
   }
 
-  assertOwnershipMedico(usuario, existentes[0].id_medico);
+  verificarAgendaDelMedico(usuario, existentes[0].id_medico);
 
   await pool.query('DELETE FROM agenda WHERE id = ?', [idAgenda]);
   return { id: idAgenda };
