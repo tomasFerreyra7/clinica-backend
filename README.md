@@ -1,6 +1,6 @@
-# Clinica - Backend (Semana 1)
+# Clinica - Backend (Semana 2)
 
-Setup, conexión a base y autenticación (JWT).
+API de gestión de clínica: autenticación JWT, coberturas, sedes, especialidades y agenda médica.
 
 ## Requisitos
 
@@ -25,7 +25,7 @@ mysql -u root -p clinica < script.sql
 mysql -u root -p clinica < migrations/001_soft_delete_sede_cobertura.sql
 ```
 
-Copiar `.env.example` a `.env` y completar credenciales (ya viene un `.env` de ejemplo para desarrollo local).
+Copiar `.env.example` a `.env` y completar credenciales.
 
 ## Correr
 
@@ -35,15 +35,7 @@ pnpm run dev
 
 Servidor en `http://localhost:3000`.
 
-## Endpoints
-
-- `GET /health` — chequea conexión a la base.
-- `GET /coberturas` — público, lista coberturas disponibles (usado en el registro).
-- `GET /coberturas/:id`, `POST /coberturas`, `PUT /coberturas/:id`, `DELETE /coberturas/:id` — CRUD, solo rol `admin`. El delete es baja lógica (columna `activo`) y devuelve 409 si la cobertura tiene usuarios asociados.
-- `GET /sedes`, `GET /sedes/:id`, `POST /sedes`, `PUT /sedes/:id`, `DELETE /sedes/:id` — CRUD, solo rol `admin`. El delete es baja lógica (columna `activo`) y devuelve 409 si la sede tiene médicos, operadores o agenda asociada.
-- `POST /auth/registro` — alta de paciente. Body: `nombre, apellido, dni, email, password, fecha_nacimiento, id_cobertura, telefono?`.
-- `POST /auth/login` — Body: `dni, password`. Devuelve JWT con `id, rol, id_sede`.
-- `GET /auth/perfil` — protegido (`verificarToken` + `verificarRol`). Header `Authorization: Bearer <token>`.
+Header en rutas protegidas: `Authorization: Bearer <token>`.
 
 ## Formato de respuesta uniforme
 
@@ -51,7 +43,67 @@ Servidor en `http://localhost:3000`.
 { "codigo": 200, "estado": "ok", "datos": { } }
 ```
 
-Mismo formato en éxito y error.
+Mismo formato en éxito y error (`datos` suele ser `null` en error).
+
+## Endpoints
+
+### Base
+
+- `GET /health` — chequea conexión a la base.
+
+### Auth
+
+- `POST /auth/registro` — alta de paciente. Body: `nombre, apellido, dni, email, password, fecha_nacimiento, id_cobertura, telefono?`.
+- `POST /auth/login` — Body: `dni, password`. Devuelve JWT con `id, rol, id_sede`.
+- `GET /auth/perfil` — protegido (`verificarToken`).
+- `GET /auth/solo-admin` — prueba de rol: solo `admin`.
+
+### Coberturas
+
+- `GET /coberturas` — público, lista coberturas disponibles (usado en el registro).
+- `GET /coberturas/:id`, `POST /coberturas`, `PUT /coberturas/:id`, `DELETE /coberturas/:id` — CRUD, solo rol `admin`. El delete es baja lógica (columna `activo`) y devuelve 409 si la cobertura tiene usuarios asociados.
+
+### Sedes (solo `admin`)
+
+- `GET /sedes`, `GET /sedes/:id`, `POST /sedes`, `PUT /sedes/:id`, `DELETE /sedes/:id` — CRUD. El delete es baja lógica (columna `activo`) y devuelve 409 si la sede tiene médicos, operadores o agenda asociada.
+
+### Especialidades (solo `admin`)
+
+- `POST /especialidades` — alta. Body: `{ "descripcion": "..." }` (máx. 30 caracteres).
+- `GET /especialidades` — listado.
+- `PUT /especialidades/:id` — modificación. Body: `{ "descripcion": "..." }`.
+- `DELETE /especialidades/:id` — baja. Si tiene médicos en `medico_especialidad` → `409`.
+
+### Agenda (roles `operador` | `medico`)
+
+Body de alta/modificación:
+
+```json
+{
+  "hora_entrada": "09:00",
+  "hora_salida": "12:00",
+  "fecha": "2026-09-15",
+  "id_medico": 1,
+  "id_especialidad": 1,
+  "id_sede": 1
+}
+```
+
+- `POST /agendas` — alta de bloque horario.
+- `GET /agendas` — listado. Query opcionales: `id_medico`, `id_sede`, `fecha`.
+- `PUT /agendas/:id` — modificación (mismas validaciones que el alta).
+- `DELETE /agendas/:id` — baja.
+
+Reglas de negocio:
+
+- `hora_entrada` anterior a `hora_salida` (formato `HH:MM`).
+- `fecha` en `YYYY-MM-DD`.
+- Deben existir médico (`rol = medico`), especialidad y sede.
+- El médico debe tener esa especialidad en `medico_especialidad`.
+- No se permiten horarios solapados del mismo médico en la misma fecha.
+- **Médico:** solo gestiona su propia agenda (`id_medico` = usuario del token). Si intenta la de otro → `403`.
+- **Operador:** puede gestionar la agenda de cualquier médico.
+- **Paciente:** `403` en todos los endpoints de agenda.
 
 ## Postman
 
