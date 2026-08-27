@@ -5,6 +5,11 @@ import pool from './database/db.js';
 import { enviarOk, enviarError } from './utils/respuesta.js';
 import authRoutes from './routes/auth.routes.js';
 import coberturaRoutes from './routes/cobertura.routes.js';
+import sedeRoutes from './routes/sede.routes.js';
+import especialidadRoutes from './routes/especialidad.routes.js';
+import agendaRoutes from './routes/agenda.routes.js';
+import notificacionRoutes from './routes/notificacion.routes.js';
+import historialRoutes from './routes/historial.routes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,6 +29,11 @@ app.get('/health', async (req, res) => {
 
 app.use('/auth', authRoutes);
 app.use('/coberturas', coberturaRoutes);
+app.use('/sedes', sedeRoutes);
+app.use('/especialidades', especialidadRoutes);
+app.use('/agendas', agendaRoutes);
+app.use('/notificaciones', notificacionRoutes);
+app.use('/historial', historialRoutes);
 
 // 404
 app.use((req, res) => {

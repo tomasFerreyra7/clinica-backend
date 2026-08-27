@@ -1,9 +1,22 @@
-// Formato uniforme de respuesta para toda la API: { codigo, estado, datos }
+// Formato uniforme de respuesta para toda la API: { codigo, estado, mensaje, datos }
 
-export function enviarOk(res, codigo, datos = null, estado = 'ok') {
-  return res.status(codigo).json({ codigo, estado, datos });
+/**
+ * @param {import('express').Response} res
+ * @param {number} codigo
+ * @param {unknown} [datos]
+ * @param {string} [mensaje]
+ */
+export function enviarOk(res, codigo, datos = null, mensaje = null) {
+  return res.status(codigo).json({ codigo, estado: 'ok', mensaje, datos });
 }
 
+/**
+ * @param {import('express').Response} res
+ * @param {number} codigo
+ * @param {string} mensaje
+ * @param {unknown} [datos]
+ */
 export function enviarError(res, codigo, mensaje, datos = null) {
-  return res.status(codigo).json({ codigo, estado: mensaje, datos });
+  return res.status(codigo).json({ codigo, estado: 'error', mensaje, datos });
 }
+
