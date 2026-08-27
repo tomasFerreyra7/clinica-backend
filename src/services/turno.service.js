@@ -336,6 +336,31 @@ function verificarPermisoCancelacion(usuario, turno) {
   throw new ErrorServicio(403, 'No tiene permisos para cancelar este turno');
 }
 
+function verificarPermisoAtencion(usuario, turno) {
+  if (usuario?.rol !== 'medico') {
+    throw new ErrorServicio(403, 'Solo un medico puede marcar un turno como atendido');
+  }
+  if (Number(turno.id_medico) !== Number(usuario.id)) {
+    throw new ErrorServicio(403, 'El turno no pertenece al medico autenticado');
+  }
+}
+
+const SQL_LISTAR_TURNO = `SELECT t.id, t.nota, t.fecha, t.hora, t.estado, t.id_paciente, t.id_cobertura, t.id_agenda,
+                                 a.id_medico, a.id_especialidad, a.id_sede
+                          FROM turno t
+                          INNER JOIN agenda a ON a.id = t.id_agenda`;
+
+async function ejecutarListado(filtros, valores) {
+  let sql = SQL_LISTAR_TURNO;
+  if (filtros.length > 0) {
+    sql += ` WHERE ${filtros.join(' AND ')}`;
+  }
+  sql += ' ORDER BY t.fecha ASC, t.hora ASC';
+
+  const [filas] = await pool.query(sql, valores);
+  return filas.map(mapearTurno);
+}
+
 export async function crearTurno(body, usuario) {
   const datos = parsearDatosTurno(body, usuario);
   validarOperadorSede(usuario, datos.id_sede);
@@ -391,6 +416,89 @@ export async function cancelarTurno(id, usuario) {
   );
 
   return mapearTurno({ ...turno, estado: 'cancelado' });
+}
+
+export async function atenderTurno(id, usuario) {
+  const idTurno = validarIdParam(id);
+  const turno = await obtenerTurnoConAgenda(idTurno);
+
+  verificarPermisoAtencion(usuario, turno);
+
+  if (String(turno.estado).toLowerCase() !== 'confirmado') {
+    throw new ErrorServicio(409, 'Solo se pueden atender turnos confirmados');
+  }
+
+  await pool.query('UPDATE turno SET estado = ? WHERE id = ?', ['atendido', idTurno]);
+
+  await crearNotificacion(
+    turno.id_paciente,
+    'turno_atendido',
+    `Turno atendido el ${normalizarFechaRespuesta(turno.fecha)} a las ${turno.hora}`
+  );
+
+  return mapearTurno({ ...turno, estado: 'atendido' });
+}
+
+export async function listarMisTurnos(usuario) {
+  if (usuario?.rol !== 'paciente') {
+    throw new ErrorServicio(403, 'No tiene permisos para consultar turnos propios');
+  }
+
+  return ejecutarListado(['t.id_paciente = ?'], [Number(usuario.id)]);
+}
+
+export async function listarTurnos(query = {}, usuario) {
+  if (query.fecha === undefined || query.fecha === null || query.fecha === '') {
+    throw new ErrorServicio(400, 'fecha es obligatoria');
+  }
+
+  const fecha = validarFecha(query.fecha);
+  const tieneMedico = query.id_medico !== undefined && query.id_medico !== '';
+  const tieneSede = query.id_sede !== undefined && query.id_sede !== '';
+
+  if (usuario?.rol === 'medico') {
+    if (tieneSede) {
+      throw new ErrorServicio(400, 'id_sede no aplica para el listado del medico');
+    }
+    if (tieneMedico) {
+      const idQuery = validarEnteroPositivo(Number(query.id_medico), 'id_medico');
+      if (idQuery !== Number(usuario.id)) {
+        throw new ErrorServicio(403, 'No tiene permisos para consultar turnos de otro medico');
+      }
+    }
+
+    return ejecutarListado(
+      ['a.id_medico = ?', 't.fecha = ?'],
+      [Number(usuario.id), fecha]
+    );
+  }
+
+  if (usuario?.rol === 'operador') {
+    if (tieneMedico && tieneSede) {
+      throw new ErrorServicio(400, 'Indique id_medico o id_sede, no ambos');
+    }
+    if (!tieneMedico && !tieneSede) {
+      throw new ErrorServicio(400, 'Debe indicar id_medico o id_sede');
+    }
+
+    if (tieneMedico) {
+      const idMedico = validarEnteroPositivo(Number(query.id_medico), 'id_medico');
+      return ejecutarListado(
+        ['a.id_medico = ?', 't.fecha = ?'],
+        [idMedico, fecha]
+      );
+    }
+
+    const idSede = validarEnteroPositivo(Number(query.id_sede), 'id_sede');
+    verificarPermisoPorSede(usuario, idSede);
+
+    return ejecutarListado(
+      ['a.id_sede = ?', 't.fecha = ?'],
+      [idSede, fecha]
+    );
+  }
+
+  throw new ErrorServicio(403, 'No tiene permisos para consultar turnos');
 }
 
 export { ErrorServicio, DURACION_TURNO_MIN };
