@@ -4,7 +4,7 @@ import { listarNotificaciones, marcarNotificacionLeida, ErrorServicio } from '..
 export async function listar(req, res) {
   try {
     const datos = await listarNotificaciones(req.usuario.id);
-    return enviarOk(res, 200, datos);
+    return enviarOk(res, 200, datos, 'Notificaciones obtenidas correctamente');
   } catch (error) {
     if (error instanceof ErrorServicio) {
       return enviarError(res, error.codigo, error.message);
@@ -17,7 +17,7 @@ export async function listar(req, res) {
 export async function marcarLeida(req, res) {
   try {
     const datos = await marcarNotificacionLeida(req.params.id, req.usuario.id);
-    return enviarOk(res, 200, datos);
+    return enviarOk(res, 200, datos, 'Notificacion marcada como leida');
   } catch (error) {
     if (error instanceof ErrorServicio) {
       return enviarError(res, error.codigo, error.message);
@@ -26,4 +26,3 @@ export async function marcarLeida(req, res) {
     return enviarError(res, 500, 'Error al marcar la notificacion como leida');
   }
 }
-

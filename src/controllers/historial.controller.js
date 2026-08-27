@@ -4,7 +4,7 @@ import { crearHistorial, listarHistorial, ErrorServicio } from '../services/hist
 export async function crear(req, res) {
   try {
     const datos = await crearHistorial(req.body, req.usuario);
-    return enviarOk(res, 201, datos);
+    return enviarOk(res, 201, datos, 'Historial clinico registrado correctamente');
   } catch (error) {
     if (error instanceof ErrorServicio) {
       return enviarError(res, error.codigo, error.message);
@@ -17,7 +17,7 @@ export async function crear(req, res) {
 export async function listar(req, res) {
   try {
     const datos = await listarHistorial(req.usuario);
-    return enviarOk(res, 200, datos);
+    return enviarOk(res, 200, datos, 'Historial clinico obtenido correctamente');
   } catch (error) {
     if (error instanceof ErrorServicio) {
       return enviarError(res, error.codigo, error.message);
@@ -26,4 +26,3 @@ export async function listar(req, res) {
     return enviarError(res, 500, 'Error al obtener el historial clinico');
   }
 }
-
