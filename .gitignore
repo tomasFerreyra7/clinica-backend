@@ -6,3 +6,7 @@ node_modules/
 # Colecciones de Postman: quedan locales (contienen credenciales de prueba)
 postman_collection.json
 postman/
+
+# Reglas/convenciones locales del agente Cursor (no subir al remoto)
+.cursor/
+CONVENTIONS.local.md
