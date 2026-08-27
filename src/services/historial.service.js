@@ -36,7 +36,13 @@ export async function crearHistorial(body, usuario) {
   }
 
   const datos = obtenerDatosHistorial(body);
-  const [turnos] = await pool.query('SELECT id, id_paciente, id_medico, estado FROM turno WHERE id = ?', [datos.id_turno]);
+  const [turnos] = await pool.query(
+    `SELECT t.id, t.id_paciente, t.estado, a.id_medico
+     FROM turno t
+     INNER JOIN agenda a ON a.id = t.id_agenda
+     WHERE t.id = ?`,
+    [datos.id_turno]
+  );
 
   if (turnos.length === 0) {
     throw new ErrorServicio(404, 'Turno no encontrado');
@@ -57,9 +63,16 @@ export async function crearHistorial(body, usuario) {
 
   const [resultado] = await pool.query(
     `INSERT INTO historial_clinico
-       (id_turno, diagnostico, tratamiento, observaciones)
-     VALUES (?, ?, ?, ?)`,
-    [datos.id_turno, datos.diagnostico, datos.tratamiento, datos.observaciones],
+       (id_turno, id_medico, id_paciente, diagnostico, tratamiento, observaciones)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      datos.id_turno,
+      turno.id_medico,
+      turno.id_paciente,
+      datos.diagnostico,
+      datos.tratamiento,
+      datos.observaciones,
+    ]
   );
 
   return { id: resultado.insertId, ...datos };
@@ -70,20 +83,18 @@ export async function listarHistorial(usuario) {
     throw new ErrorServicio(403, 'No tiene permisos para consultar historiales');
   }
 
-  const condiciones = usuario.rol === 'paciente' ? 't.id_paciente = ?' : 't.id_medico = ?';
+  const condiciones = usuario.rol === 'paciente' ? 'h.id_paciente = ?' : 'h.id_medico = ?';
 
   const [filas] = await pool.query(
     `SELECT h.id, h.id_turno, h.diagnostico, h.tratamiento,
             h.observaciones, h.fecha_registro
      FROM historial_clinico h
-     INNER JOIN turno t ON t.id = h.id_turno
      WHERE ${condiciones}
      ORDER BY h.fecha_registro DESC, h.id DESC`,
-    [usuario.id],
+    [usuario.id]
   );
 
   return filas;
 }
 
 export { ErrorServicio };
-
