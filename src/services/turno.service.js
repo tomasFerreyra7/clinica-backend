@@ -271,6 +271,13 @@ async function validarSolapeTurnos({ id_medico, fecha, hora, horaFin }) {
   }
 }
 
+function validarIdParam(id) {
+  if (!/^\d+$/.test(String(id)) || Number(id) <= 0) {
+    throw new ErrorServicio(400, 'El id debe ser un numero entero positivo');
+  }
+  return Number(id);
+}
+
 function mapearTurno(fila) {
   return {
     id: fila.id,
@@ -285,6 +292,48 @@ function mapearTurno(fila) {
     id_especialidad: fila.id_especialidad,
     id_sede: fila.id_sede,
   };
+}
+
+async function obtenerTurnoConAgenda(idTurno) {
+  const [filas] = await pool.query(
+    `SELECT t.id, t.nota, t.fecha, t.hora, t.estado, t.id_paciente, t.id_cobertura, t.id_agenda,
+            a.id_medico, a.id_especialidad, a.id_sede
+     FROM turno t
+     INNER JOIN agenda a ON a.id = t.id_agenda
+     WHERE t.id = ?`,
+    [idTurno]
+  );
+
+  if (filas.length === 0) {
+    throw new ErrorServicio(404, 'Turno no encontrado');
+  }
+
+  return filas[0];
+}
+
+function verificarPermisoPorSede(usuario, idSedeTurno) {
+  if (usuario.id_sede === null || usuario.id_sede === undefined) {
+    throw new ErrorServicio(403, 'No tiene permisos para gestionar turnos de otra sede');
+  }
+  if (Number(usuario.id_sede) !== Number(idSedeTurno)) {
+    throw new ErrorServicio(403, 'No tiene permisos para gestionar turnos de otra sede');
+  }
+}
+
+function verificarPermisoCancelacion(usuario, turno) {
+  if (usuario.rol === 'paciente') {
+    if (Number(turno.id_paciente) !== Number(usuario.id)) {
+      throw new ErrorServicio(403, 'No tiene permisos para cancelar este turno');
+    }
+    return;
+  }
+
+  if (usuario.rol === 'operador' || usuario.rol === 'medico') {
+    verificarPermisoPorSede(usuario, turno.id_sede);
+    return;
+  }
+
+  throw new ErrorServicio(403, 'No tiene permisos para cancelar este turno');
 }
 
 export async function crearTurno(body, usuario) {
@@ -321,6 +370,27 @@ export async function crearTurno(body, usuario) {
     id_agenda: agenda.id,
     estado: 'confirmado',
   });
+}
+
+export async function cancelarTurno(id, usuario) {
+  const idTurno = validarIdParam(id);
+  const turno = await obtenerTurnoConAgenda(idTurno);
+
+  verificarPermisoCancelacion(usuario, turno);
+
+  if (String(turno.estado).toLowerCase() !== 'confirmado') {
+    throw new ErrorServicio(409, 'Solo se pueden cancelar turnos confirmados');
+  }
+
+  await pool.query('UPDATE turno SET estado = ? WHERE id = ?', ['cancelado', idTurno]);
+
+  await crearNotificacion(
+    turno.id_paciente,
+    'turno_cancelado',
+    `Turno cancelado para el ${normalizarFechaRespuesta(turno.fecha)} a las ${turno.hora}`
+  );
+
+  return mapearTurno({ ...turno, estado: 'cancelado' });
 }
 
 export { ErrorServicio, DURACION_TURNO_MIN };
