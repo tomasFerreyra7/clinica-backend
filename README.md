@@ -1,4 +1,4 @@
-# Semana 3
+# Semana 4
 
 # Clinica - Backend
 
@@ -197,6 +197,19 @@ No hay endpoint público para crear notificaciones. La función interna `crearNo
 
 Tipos usados por turnos: `turno_creado`, `turno_cancelado`, `turno_atendido`.
 
+### Reportes y estadísticas (solo `admin`)
+
+Todos requieren query `desde` y `hasta` (`YYYY-MM-DD`, inclusive). El filtro usa `turno.fecha`.
+
+- `GET /reportes/turnos-por-especialidad` — cantidad de turnos por especialidad (todos los estados: `confirmado`, `cancelado`, `atendido`). Incluye especialidades sin turnos con `cantidad: 0`.
+- `GET /reportes/turnos-por-sede` — cantidad de turnos por sede (todos los estados). Incluye sedes sin turnos con `cantidad: 0`.
+- `GET /reportes/ranking-medicos` — ranking completo de médicos por turnos **atendidos** en el período, ordenado por cantidad descendente. Posición con empates (ej. 1, 2, 2, 4).
+- `GET /reportes/tasa-cancelacion` — `total`, `cancelados` y `tasa_cancelacion` (porcentaje 0–100, 2 decimales). Si no hay turnos en el período, `tasa_cancelacion: 0`.
+
+Ejemplo de query: `?desde=2026-01-01&hasta=2026-03-31`.
+
+Respuestas posibles: `200` ok, `400` fechas inválidas o rango inconsistente, `401` sin token, `403` rol distinto de `admin`, `500` error interno.
+
 ### Flujo de prueba (E2E)
 
 1. Login como operador/médico y cargar agenda (`POST /agendas`) si hace falta.
@@ -207,6 +220,7 @@ Tipos usados por turnos: `turno_creado`, `turno_cancelado`, `turno_atendido`.
 6. Crear otro turno, atenderlo (`PATCH /turnos/:id/atender`) y verificar notificación `turno_atendido`.
 7. Registrar historial (`POST /historial`) y consultar `GET /historial` como paciente y como médico.
 8. Marcar notificación leída (`PATCH /notificaciones/:id/leida`).
+9. Login como `admin` y consultar reportes con rango de fechas; cancelar un turno y verificar que sube `cancelados` y la tasa en `/reportes/tasa-cancelacion`.
 
 ## Postman
 

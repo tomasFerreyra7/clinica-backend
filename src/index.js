@@ -11,6 +11,7 @@ import agendaRoutes from './routes/agenda.routes.js';
 import notificacionRoutes from './routes/notificacion.routes.js';
 import historialRoutes from './routes/historial.routes.js';
 import turnoRoutes from './routes/turno.routes.js';
+import reporteRoutes from './routes/reporte.routes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -36,6 +37,7 @@ app.use('/agendas', agendaRoutes);
 app.use('/notificaciones', notificacionRoutes);
 app.use('/historial', historialRoutes);
 app.use('/turnos', turnoRoutes);
+app.use('/reportes', reporteRoutes);
 
 // 404
 app.use((req, res) => {
