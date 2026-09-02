@@ -12,6 +12,7 @@ import notificacionRoutes from './routes/notificacion.routes.js';
 import historialRoutes from './routes/historial.routes.js';
 import turnoRoutes from './routes/turno.routes.js';
 import reporteRoutes from './routes/reporte.routes.js';
+import auditoriaRoutes from './routes/auditoria.routes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -38,6 +39,7 @@ app.use('/notificaciones', notificacionRoutes);
 app.use('/historial', historialRoutes);
 app.use('/turnos', turnoRoutes);
 app.use('/reportes', reporteRoutes);
+app.use('/auditoria', auditoriaRoutes);
 
 // 404
 app.use((req, res) => {

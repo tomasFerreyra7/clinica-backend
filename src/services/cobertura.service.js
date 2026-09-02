@@ -1,5 +1,6 @@
 import pool from '../database/db.js';
 import { validarTexto } from '../utils/validacion.js';
+import { registrarAuditoria } from '../utils/auditoria.js';
 
 class ErrorServicio extends Error {
   constructor(codigo, mensaje) {
@@ -28,15 +29,22 @@ export async function obtenerCobertura(id) {
   return filas[0];
 }
 
-export async function crearCobertura({ nombre }) {
+export async function crearCobertura({ nombre }, idUsuario) {
   validarDatosCobertura({ nombre });
 
   const [resultado] = await pool.query('INSERT INTO cobertura (nombre) VALUES (?)', [nombre]);
 
+  await registrarAuditoria({
+    idUsuario,
+    accion: 'ALTA',
+    entidad: 'cobertura',
+    detalle: `Se creo la cobertura ${resultado.insertId}`,
+  });
+
   return { id: resultado.insertId, nombre };
 }
 
-export async function modificarCobertura(id, { nombre }) {
+export async function modificarCobertura(id, { nombre }, idUsuario) {
   const coberturaActual = await obtenerCobertura(id);
 
   const nombreNuevo = nombre !== undefined ? nombre : coberturaActual.nombre;
@@ -44,10 +52,17 @@ export async function modificarCobertura(id, { nombre }) {
 
   await pool.query('UPDATE cobertura SET nombre = ? WHERE id = ?', [nombreNuevo, id]);
 
+  await registrarAuditoria({
+    idUsuario,
+    accion: 'MODIFICACION',
+    entidad: 'cobertura',
+    detalle: `Se modifico la cobertura ${id}`,
+  });
+
   return { id: Number(id), nombre: nombreNuevo };
 }
 
-export async function eliminarCobertura(id) {
+export async function eliminarCobertura(id, idUsuario) {
   await obtenerCobertura(id);
 
   const [usuarios] = await pool.query('SELECT id FROM usuario WHERE id_cobertura = ? LIMIT 1', [id]);
@@ -56,6 +71,13 @@ export async function eliminarCobertura(id) {
   }
 
   await pool.query('UPDATE cobertura SET activo = 0 WHERE id = ?', [id]);
+
+  await registrarAuditoria({
+    idUsuario,
+    accion: 'BAJA',
+    entidad: 'cobertura',
+    detalle: `Se dio de baja la cobertura ${id}`,
+  });
 }
 
 export { ErrorServicio };
