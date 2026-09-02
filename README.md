@@ -2,7 +2,9 @@
 
 # Clinica - Backend
 
-API de gestión de clínica: autenticación JWT, coberturas, sedes, especialidades y agenda médica.
+API de gestión de clínica: autenticación JWT, coberturas, sedes, especialidades, agenda médica, turnos, historial clínico y notificaciones.
+
+Header en rutas protegidas: `Authorization: Bearer <token>`.
 
 ## Requisitos
 
@@ -98,19 +100,78 @@ Reglas de negocio:
 
 - `hora_entrada` anterior a `hora_salida` (formato `HH:MM`).
 - `fecha` en `YYYY-MM-DD`.
-- Deben existir médico (`rol = medico`), especialidad y sede.
+- Deben existir médico (`rol = medico`), especialidad y sede activa.
 - El médico debe tener esa especialidad en `medico_especialidad`.
 - No se permiten horarios solapados del mismo médico en la misma fecha.
 - **Médico:** solo gestiona su propia agenda (`id_medico` = usuario del token). Si intenta la de otro → `403`.
 - **Operador:** puede gestionar la agenda de cualquier médico.
 - **Paciente:** `403` en todos los endpoints de agenda.
 
-### Historial clinico
+### Turnos
 
-Todos los endpoints requieren el header `Authorization: Bearer <token>`.
+Estados posibles: `confirmado`, `cancelado`, `atendido`.
 
-- `POST /historial` — registra el historial de un turno. Solo médicos.
-- `GET /historial` — paciente ve el historial de sus turnos; médico ve el de los turnos que atendió.
+Duración fija de cada turno: **30 minutos** (se usa solo la hora de inicio en el body; el fin se calcula en el servidor).
+
+Body de alta (`POST /turnos`), roles `paciente` | `operador`:
+
+```json
+{
+  "id_especialidad": 1,
+  "id_sede": 1,
+  "id_medico": 2,
+  "fecha": "2026-09-15",
+  "hora": "09:30",
+  "nota": "Primera consulta",
+  "id_paciente": 5
+}
+```
+
+- `id_paciente` solo lo envía el **operador** (obligatorio para él). El paciente no lo envía: se toma del token.
+- `id_cobertura` **no** se acepta en el body: se toma automáticamente del paciente.
+
+Endpoints:
+
+- `POST /turnos` — solicitar turno. Roles: `paciente`, `operador`. Crea con estado `confirmado` y notifica `turno_creado` al paciente.
+- `PATCH /turnos/:id/cancelar` — cancelar turno. Roles: `paciente`, `operador`, `medico`. Pasa a `cancelado` y notifica `turno_cancelado`.
+- `PATCH /turnos/:id/atender` — marcar atendido. Solo `medico`. Pasa a `atendido` y notifica `turno_atendido`.
+- `GET /turnos/mios` — turnos del paciente autenticado, ordenados del más próximo al más lejano (`fecha ASC`, `hora ASC`).
+- `GET /turnos` — listado por fecha. Roles: `operador`, `medico`. Query obligatoria: `fecha`. Además:
+  - Por médico: `id_medico` + `fecha`.
+  - Por sede (solo operador): `id_sede` + `fecha`.
+
+Reglas de negocio (alta):
+
+- `nota` obligatoria (máx. 40 caracteres).
+- `fecha` y `hora` no pueden ser pasadas.
+- Deben existir médico, especialidad, sede activa y vínculo en `medico_especialidad`.
+- Debe existir un bloque de agenda para esa combinación médico/especialidad/sede/fecha.
+- El turno debe caber dentro del bloque: `hora_entrada < hora_inicio` y `hora_fin < hora_salida` (extremos no inclusivos).
+- No puede superponerse con otro turno `confirmado` del mismo médico en la misma fecha (intervalo de 30 min).
+- **Operador:** solo puede operar en su sede (`id_sede` del body = `id_sede` del token).
+- **Médico:** no puede crear turnos (`403`).
+
+Reglas de negocio (cancelación):
+
+- Solo desde estado `confirmado`.
+- **Paciente:** solo sus propios turnos.
+- **Operador / médico:** solo turnos de su sede (`agenda.id_sede` = `id_sede` del token).
+
+Reglas de negocio (atención):
+
+- Solo desde estado `confirmado`.
+- Solo el médico dueño del turno (`agenda.id_medico` = usuario del token).
+- No crea historial clínico; eso es un paso posterior con `POST /historial`.
+
+Reglas de negocio (listados):
+
+- **Médico:** en `GET /turnos` solo ve sus turnos; si envía `id_medico` ajeno → `403`.
+- **Operador:** en listado por sede, solo su `id_sede`; debe indicar `id_medico` o `id_sede`, no ambos.
+
+### Historial clínico
+
+- `POST /historial` — registra el historial de un turno. Solo `medico`.
+- `GET /historial` — paciente ve el suyo; médico ve el de los turnos que atendió.
 
 Body de `POST /historial`:
 
@@ -129,25 +190,30 @@ Respuestas posibles: `201` creado, `400` datos inválidos, `403` permisos insufi
 
 ### Notificaciones
 
-Todos los endpoints requieren el header `Authorization: Bearer <token>`.
-
-- `GET /notificaciones` — lista las notificaciones del usuario autenticado, de más reciente a más antigua.
+- `GET /notificaciones` — lista las del usuario autenticado, de más reciente a más antigua.
 - `PATCH /notificaciones/:id/leida` — marca como leída una notificación propia.
 
-No existe un endpoint público para crear notificaciones. La función interna `crearNotificacion(idUsuario, tipo, mensaje)` se encuentra en `src/services/notificacion.service.js` y guarda automáticamente la fecha y `leida = 0`.
+No hay endpoint público para crear notificaciones. La función interna `crearNotificacion(idUsuario, tipo, mensaje)` está en `src/services/notificacion.service.js` (fecha automática, `leida = 0`).
 
-Tipos de notificación sugeridos: `turno_creado`, `turno_cancelado`, `turno_atendido` y `turno_rechazado`.
+Tipos usados por turnos: `turno_creado`, `turno_cancelado`, `turno_atendido`.
 
-### Flujo de prueba
+### Flujo de prueba (E2E)
 
-1. Iniciar sesión como paciente y como médico mediante `POST /auth/login`.
-2. Usar el token correspondiente en las rutas protegidas.
-3. Cancelar o actualizar un turno y consultar `GET /notificaciones`.
-4. Marcar una notificación con `PATCH /notificaciones/:id/leida`.
-5. Marcar un turno como `atendido` y registrar su historial con `POST /historial`.
-6. Consultar `GET /historial` como paciente y como médico.
-7. Verificar que un médico no pueda registrar historiales de otro médico y que un paciente no pueda crearlos.
+1. Login como operador/médico y cargar agenda (`POST /agendas`) si hace falta.
+2. Login como paciente u operador y solicitar turno (`POST /turnos`).
+3. Consultar `GET /turnos/mios` (paciente) o `GET /turnos?id_medico=&fecha=` / `?id_sede=&fecha=` (operador/médico).
+4. Probar alta rechazada por horario fuera de agenda o superpuesto → respuesta `409`.
+5. Cancelar turno (`PATCH /turnos/:id/cancelar`) y verificar `GET /notificaciones` (`turno_cancelado`).
+6. Crear otro turno, atenderlo (`PATCH /turnos/:id/atender`) y verificar notificación `turno_atendido`.
+7. Registrar historial (`POST /historial`) y consultar `GET /historial` como paciente y como médico.
+8. Marcar notificación leída (`PATCH /notificaciones/:id/leida`).
 
 ## Postman
 
 Las colecciones de Postman no se versionan en git (contienen credenciales de prueba). Mantené tu copia local en `postman_collection.json` / `postman/` (ya en `.gitignore`) y compartila con el equipo por fuera del repo.
+
+Casos mínimos sugeridos para la entrega:
+
+- Turno rechazado por horario (fuera de agenda o superpuesto).
+- Turno cancelado con notificación generada.
+- Turno atendido con historial clínico asociado.
