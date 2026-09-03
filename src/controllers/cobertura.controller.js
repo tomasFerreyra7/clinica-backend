@@ -33,7 +33,7 @@ export async function obtenerCobertura(req, res) {
 
 export async function crearCobertura(req, res) {
   try {
-    const datos = await crearCoberturaService(req.body);
+    const datos = await crearCoberturaService(req.body, req.usuario.id);
     return enviarOk(res, 201, datos);
   } catch (error) {
     if (error instanceof ErrorServicio) {
@@ -46,7 +46,7 @@ export async function crearCobertura(req, res) {
 
 export async function modificarCobertura(req, res) {
   try {
-    const datos = await modificarCoberturaService(req.params.id, req.body);
+    const datos = await modificarCoberturaService(req.params.id, req.body, req.usuario.id);
     return enviarOk(res, 200, datos);
   } catch (error) {
     if (error instanceof ErrorServicio) {
@@ -59,7 +59,7 @@ export async function modificarCobertura(req, res) {
 
 export async function eliminarCobertura(req, res) {
   try {
-    await eliminarCoberturaService(req.params.id);
+    await eliminarCoberturaService(req.params.id, req.usuario.id);
     return enviarOk(res, 200, { mensaje: 'Cobertura eliminada' });
   } catch (error) {
     if (error instanceof ErrorServicio) {

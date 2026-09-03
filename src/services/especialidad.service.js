@@ -1,4 +1,5 @@
 import pool from '../database/db.js';
+import { registrarAuditoria } from '../utils/auditoria.js';
 
 class ErrorServicio extends Error {
   constructor(codigo, mensaje) {
@@ -32,7 +33,7 @@ function validarDescripcion(descripcion) {
   return valor;
 }
 
-export async function crearEspecialidad({ descripcion }) {
+export async function crearEspecialidad({ descripcion }, idUsuario) {
   const valor = validarDescripcion(descripcion);
 
   const [duplicadas] = await pool.query(
@@ -48,6 +49,13 @@ export async function crearEspecialidad({ descripcion }) {
     [valor]
   );
 
+  await registrarAuditoria({
+    idUsuario,
+    accion: 'ALTA',
+    entidad: 'especialidad',
+    detalle: `Se creo la especialidad ${resultado.insertId}`,
+  });
+
   return { id: resultado.insertId, descripcion: valor };
 }
 
@@ -58,7 +66,7 @@ export async function listarEspecialidades() {
   return filas;
 }
 
-export async function actualizarEspecialidad(id, { descripcion }) {
+export async function actualizarEspecialidad(id, { descripcion }, idUsuario) {
   const idNum = validarId(id);
   const valor = validarDescripcion(descripcion);
 
@@ -83,10 +91,17 @@ export async function actualizarEspecialidad(id, { descripcion }) {
     [valor, idNum]
   );
 
+  await registrarAuditoria({
+    idUsuario,
+    accion: 'MODIFICACION',
+    entidad: 'especialidad',
+    detalle: `Se modifico la especialidad ${idNum}`,
+  });
+
   return { id: idNum, descripcion: valor };
 }
 
-export async function eliminarEspecialidad(id) {
+export async function eliminarEspecialidad(id, idUsuario) {
   const idNum = validarId(id);
 
   const [existentes] = await pool.query(
@@ -109,6 +124,13 @@ export async function eliminarEspecialidad(id) {
   }
 
   await pool.query('DELETE FROM especialidad WHERE id = ?', [idNum]);
+
+  await registrarAuditoria({
+    idUsuario,
+    accion: 'BAJA',
+    entidad: 'especialidad',
+    detalle: `Se dio de baja la especialidad ${idNum}`,
+  });
 
   return { id: idNum };
 }

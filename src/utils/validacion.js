@@ -1,5 +1,12 @@
 const REGEX_FECHA = /^\d{4}-\d{2}-\d{2}$/;
 
+export function validarEnteroPositivo(valor, nombreCampo) {
+  if (!/^\d+$/.test(String(valor)) || Number(valor) <= 0) {
+    throw new Error(`${nombreCampo} debe ser un numero entero positivo`);
+  }
+  return Number(valor);
+}
+
 export function validarTexto(valor, nombreCampo, { maxLength } = {}) {
   if (valor === undefined || valor === null || valor === '') {
     return `El campo ${nombreCampo} es obligatorio`;

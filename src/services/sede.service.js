@@ -1,5 +1,6 @@
 import pool from '../database/db.js';
 import { validarTexto } from '../utils/validacion.js';
+import { registrarAuditoria } from '../utils/auditoria.js';
 
 class ErrorServicio extends Error {
   constructor(codigo, mensaje) {
@@ -38,7 +39,7 @@ export async function obtenerSede(id) {
   return filas[0];
 }
 
-export async function crearSede({ nombre, direccion, telefono }) {
+export async function crearSede({ nombre, direccion, telefono }, idUsuario) {
   validarDatosSede({ nombre, direccion, telefono });
 
   const [resultado] = await pool.query(
@@ -46,10 +47,17 @@ export async function crearSede({ nombre, direccion, telefono }) {
     [nombre, direccion, telefono]
   );
 
+  await registrarAuditoria({
+    idUsuario,
+    accion: 'ALTA',
+    entidad: 'sede',
+    detalle: `Se creo la sede ${resultado.insertId}`,
+  });
+
   return { id: resultado.insertId, nombre, direccion, telefono };
 }
 
-export async function modificarSede(id, { nombre, direccion, telefono }) {
+export async function modificarSede(id, { nombre, direccion, telefono }, idUsuario) {
   const sedeActual = await obtenerSede(id);
 
   const datosNuevos = {
@@ -64,10 +72,17 @@ export async function modificarSede(id, { nombre, direccion, telefono }) {
     [datosNuevos.nombre, datosNuevos.direccion, datosNuevos.telefono, id]
   );
 
+  await registrarAuditoria({
+    idUsuario,
+    accion: 'MODIFICACION',
+    entidad: 'sede',
+    detalle: `Se modifico la sede ${id}`,
+  });
+
   return { id: Number(id), ...datosNuevos };
 }
 
-export async function eliminarSede(id) {
+export async function eliminarSede(id, idUsuario) {
   await obtenerSede(id);
 
   const [medicosOperadores] = await pool.query(
@@ -84,6 +99,13 @@ export async function eliminarSede(id) {
   }
 
   await pool.query('UPDATE sede SET activo = 0 WHERE id = ?', [id]);
+
+  await registrarAuditoria({
+    idUsuario,
+    accion: 'BAJA',
+    entidad: 'sede',
+    detalle: `Se dio de baja la sede ${id}`,
+  });
 }
 
 export { ErrorServicio };
