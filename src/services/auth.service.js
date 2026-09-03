@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import pool from '../database/db.js';
+import { registrarAuditoria } from '../utils/auditoria.js';
 
 const SALT_ROUNDS = 10;
 
@@ -33,6 +34,13 @@ export async function registrarPaciente({ nombre, apellido, dni, email, password
      VALUES (?, ?, ?, ?, 'paciente', ?, ?, ?, NULL, ?)`,
     [apellido, nombre, fecha_nacimiento, passwordHash, email, telefono || '', dni, id_cobertura]
   );
+
+  await registrarAuditoria({
+    idUsuario: resultado.insertId,
+    accion: 'ALTA',
+    entidad: 'usuario',
+    detalle: 'Paciente registrado mediante el endpoint publico',
+  });
 
   return { id: resultado.insertId, nombre, apellido, dni, email, rol: 'paciente' };
 }

@@ -1,8 +1,10 @@
-# Semana 3
+# Semana 4
 
 # Clinica - Backend
 
-API de gestión de clínica: autenticación JWT, coberturas, sedes, especialidades, agenda médica, turnos, historial clínico y notificaciones.
+API de gestión de clínica: autenticación JWT, coberturas, sedes, especialidades, agenda médica, turnos, historial clínico, notificaciones y reportes estadísticos.
+
+Roles en la base: `admin`, `operador`, `medico`, `paciente`.
 
 Header en rutas protegidas: `Authorization: Bearer <token>`.
 
@@ -39,42 +41,118 @@ pnpm run dev
 
 Servidor en `http://localhost:3000`.
 
-## Formato de respuesta uniforme
+## Estructura del proyecto
 
-```json
-{ "codigo": 200, "estado": "ok", "datos": {} }
+```
+src/
+├── index.js           # Express app y registro de rutas
+├── routes/            # Rutas HTTP + middlewares de auth por endpoint
+├── controllers/       # try/catch, enviarOk / enviarError
+├── services/          # Lógica de negocio y consultas SQL
+├── middlewares/         # verificarToken, verificarRol
+├── utils/             # respuesta.js, validacion.js
+└── database/db.js     # Pool MySQL
 ```
 
-Mismo formato en éxito y error (`datos` suele ser `null` en error).
+## Formato de respuesta uniforme
+
+Todas las respuestas usan `enviarOk` y `enviarError` (`src/utils/respuesta.js`).
+
+**Éxito:**
+
+```json
+{
+  "codigo": 200,
+  "estado": "ok",
+  "mensaje": null,
+  "datos": {}
+}
+```
+
+`mensaje` puede traer texto en algunos endpoints (historial, notificaciones). `codigo` en el JSON coincide con el HTTP (200, 201, etc.).
+
+**Error:**
+
+```json
+{
+  "codigo": 400,
+  "estado": "error",
+  "mensaje": "descripcion del error",
+  "datos": null
+}
+```
+
+**Códigos HTTP habituales:**
+
+| Código | Uso |
+|--------|-----|
+| `200` | OK |
+| `201` | Recurso creado |
+| `400` | Validación de input |
+| `401` | Sin token o token inválido |
+| `403` | Rol o permiso insuficiente |
+| `404` | Recurso no encontrado |
+| `409` | Conflicto de negocio |
+| `500` | Error interno (sin detalle de MySQL) |
+
+Rutas inexistentes → `404` con `{ "mensaje": "Recurso no encontrado" }`.
+
+## Resumen de endpoints
+
+| Prefijo | Auth | Rol(es) | Descripción |
+|---------|------|---------|-------------|
+| `GET /health` | No | — | Estado del servidor y DB |
+| `/auth` | Parcial | — | Registro, login, perfil |
+| `/coberturas` | Parcial | `admin` (CRUD) | Coberturas médicas |
+| `/sedes` | Sí | `admin` | Sedes |
+| `/especialidades` | Sí | `admin` | Especialidades |
+| `/agendas` | Sí | `operador`, `medico` | Agenda médica |
+| `/turnos` | Sí | varios | Turnos |
+| `/historial` | Sí | `medico` (POST), paciente/médico (GET) | Historial clínico |
+| `/notificaciones` | Sí | cualquier autenticado | Notificaciones del usuario |
+| `/reportes` | Sí | `admin` | Estadísticas de turnos |
+| `/auditoria` | — | — | Pendiente (compañero, semana 4) |
+
+---
 
 ## Endpoints
 
 ### Base
 
-- `GET /health` — chequea conexión a la base.
+- `GET /health` — chequea conexión a la base. Respuesta: `{ "db": "conectada" }` en `datos`.
 
 ### Auth
 
-- `POST /auth/registro` — alta de paciente. Body: `nombre, apellido, dni, email, password, fecha_nacimiento, id_cobertura, telefono?`.
-- `POST /auth/login` — Body: `dni, password`. Devuelve JWT con `id, rol, id_sede`.
-- `GET /auth/perfil` — protegido (`verificarToken`).
-- `GET /auth/solo-admin` — prueba de rol: solo `admin`.
+- `POST /auth/registro` — alta de paciente (público).
+  - Body: `nombre`, `apellido`, `dni`, `email`, `password`, `fecha_nacimiento`, `id_cobertura`, `telefono?`.
+- `POST /auth/login` — Body: `dni`, `password`.
+  - Respuesta en `datos`: `{ "token", "usuario": { "id", "rol", "id_sede" } }`.
+- `GET /auth/perfil` — protegido (`verificarToken`). Devuelve datos del usuario autenticado.
 
 ### Coberturas
 
-- `GET /coberturas` — público, lista coberturas disponibles (usado en el registro).
-- `GET /coberturas/:id`, `POST /coberturas`, `PUT /coberturas/:id`, `DELETE /coberturas/:id` — CRUD, solo rol `admin`. El delete es baja lógica (columna `activo`) y devuelve 409 si la cobertura tiene usuarios asociados.
+- `GET /coberturas` — **público**, lista coberturas activas (usado en el registro).
+- `GET /coberturas/:id` — solo `admin`.
+- `POST /coberturas` — solo `admin`. Body: `{ "nombre": "..." }` (máx. 30 caracteres).
+- `PUT /coberturas/:id` — solo `admin`. Body: `{ "nombre": "..." }`.
+- `DELETE /coberturas/:id` — solo `admin`. Baja lógica (`activo = 0`). `409` si tiene usuarios asociados.
 
 ### Sedes (solo `admin`)
 
-- `GET /sedes`, `GET /sedes/:id`, `POST /sedes`, `PUT /sedes/:id`, `DELETE /sedes/:id` — CRUD. El delete es baja lógica (columna `activo`) y devuelve 409 si la sede tiene médicos, operadores o agenda asociada.
+Body de alta/modificación: `{ "nombre", "direccion", "telefono" }` (nombre máx. 50, dirección 100, teléfono 15).
+
+- `GET /sedes` — listado de sedes activas.
+- `GET /sedes/:id` — detalle.
+- `POST /sedes` — alta.
+- `PUT /sedes/:id` — modificación.
+- `DELETE /sedes/:id` — baja lógica. `409` si tiene médicos, operadores o agenda asociada.
 
 ### Especialidades (solo `admin`)
 
 - `POST /especialidades` — alta. Body: `{ "descripcion": "..." }` (máx. 30 caracteres).
 - `GET /especialidades` — listado.
 - `PUT /especialidades/:id` — modificación. Body: `{ "descripcion": "..." }`.
-- `DELETE /especialidades/:id` — baja. Si tiene médicos en `medico_especialidad` → `409`.
+- `DELETE /especialidades/:id` — baja. `409` si tiene filas en `medico_especialidad`.
 
 ### Agenda (roles `operador` | `medico`)
 
@@ -111,7 +189,7 @@ Reglas de negocio:
 
 Estados posibles: `confirmado`, `cancelado`, `atendido`.
 
-Duración fija de cada turno: **30 minutos** (se usa solo la hora de inicio en el body; el fin se calcula en el servidor).
+Duración fija de cada turno: **30 minutos** (solo hora de inicio en el body; el fin se calcula en el servidor).
 
 Body de alta (`POST /turnos`), roles `paciente` | `operador`:
 
@@ -128,15 +206,15 @@ Body de alta (`POST /turnos`), roles `paciente` | `operador`:
 ```
 
 - `id_paciente` solo lo envía el **operador** (obligatorio para él). El paciente no lo envía: se toma del token.
-- `id_cobertura` **no** se acepta en el body: se toma automáticamente del paciente.
+- `id_cobertura` **no** se acepta en el body: se toma del paciente.
 
 Endpoints:
 
-- `POST /turnos` — solicitar turno. Roles: `paciente`, `operador`. Crea con estado `confirmado` y notifica `turno_creado` al paciente.
-- `PATCH /turnos/:id/cancelar` — cancelar turno. Roles: `paciente`, `operador`, `medico`. Pasa a `cancelado` y notifica `turno_cancelado`.
-- `PATCH /turnos/:id/atender` — marcar atendido. Solo `medico`. Pasa a `atendido` y notifica `turno_atendido`.
-- `GET /turnos/mios` — turnos del paciente autenticado, ordenados del más próximo al más lejano (`fecha ASC`, `hora ASC`).
-- `GET /turnos` — listado por fecha. Roles: `operador`, `medico`. Query obligatoria: `fecha`. Además:
+- `POST /turnos` — solicitar turno. Roles: `paciente`, `operador`. Estado inicial `confirmado`; notifica `turno_creado`.
+- `PATCH /turnos/:id/cancelar` — cancelar. Roles: `paciente`, `operador`, `medico`. Pasa a `cancelado`; notifica `turno_cancelado`.
+- `PATCH /turnos/:id/atender` — marcar atendido. Solo `medico`. Pasa a `atendido`; notifica `turno_atendido`.
+- `GET /turnos/mios` — turnos del paciente autenticado (`paciente`). Orden: `fecha ASC`, `hora ASC`.
+- `GET /turnos` — listado por fecha. Roles: `operador`, `medico`. Query obligatoria: `fecha`.
   - Por médico: `id_medico` + `fecha`.
   - Por sede (solo operador): `id_sede` + `fecha`.
 
@@ -145,33 +223,33 @@ Reglas de negocio (alta):
 - `nota` obligatoria (máx. 40 caracteres).
 - `fecha` y `hora` no pueden ser pasadas.
 - Deben existir médico, especialidad, sede activa y vínculo en `medico_especialidad`.
-- Debe existir un bloque de agenda para esa combinación médico/especialidad/sede/fecha.
-- El turno debe caber dentro del bloque: `hora_entrada < hora_inicio` y `hora_fin < hora_salida` (extremos no inclusivos).
-- No puede superponerse con otro turno `confirmado` del mismo médico en la misma fecha (intervalo de 30 min).
-- **Operador:** solo puede operar en su sede (`id_sede` del body = `id_sede` del token).
+- Debe existir bloque de agenda para médico/especialidad/sede/fecha.
+- El turno debe caber dentro del bloque (`hora_entrada < hora_inicio` y `hora_fin < hora_salida`).
+- Sin solapamiento con otro turno `confirmado` del mismo médico y fecha (intervalo 30 min).
+- **Operador:** solo en su sede (`id_sede` del body = token).
 - **Médico:** no puede crear turnos (`403`).
 
 Reglas de negocio (cancelación):
 
-- Solo desde estado `confirmado`.
-- **Paciente:** solo sus propios turnos.
-- **Operador / médico:** solo turnos de su sede (`agenda.id_sede` = `id_sede` del token).
+- Solo desde `confirmado`.
+- **Paciente:** solo sus turnos.
+- **Operador / médico:** solo turnos de su sede.
 
 Reglas de negocio (atención):
 
-- Solo desde estado `confirmado`.
-- Solo el médico dueño del turno (`agenda.id_medico` = usuario del token).
-- No crea historial clínico; eso es un paso posterior con `POST /historial`.
+- Solo desde `confirmado`.
+- Solo el médico dueño del turno.
+- No crea historial; eso es `POST /historial`.
 
 Reglas de negocio (listados):
 
-- **Médico:** en `GET /turnos` solo ve sus turnos; si envía `id_medico` ajeno → `403`.
-- **Operador:** en listado por sede, solo su `id_sede`; debe indicar `id_medico` o `id_sede`, no ambos.
+- **Médico:** solo sus turnos; `id_medico` ajeno → `403`.
+- **Operador:** `id_medico` o `id_sede`, no ambos; sede solo la del token.
 
 ### Historial clínico
 
-- `POST /historial` — registra el historial de un turno. Solo `medico`.
-- `GET /historial` — paciente ve el suyo; médico ve el de los turnos que atendió.
+- `POST /historial` — solo `medico`.
+- `GET /historial` — paciente ve el suyo; médico ve el de turnos que atendió.
 
 Body de `POST /historial`:
 
@@ -184,36 +262,99 @@ Body de `POST /historial`:
 }
 ```
 
-El turno debe existir, estar en estado `atendido` y pertenecer al médico autenticado. No se puede registrar más de un historial para el mismo turno.
+El turno debe existir, estar `atendido` y pertenecer al médico autenticado. Un solo historial por turno.
 
-Respuestas posibles: `201` creado, `400` datos inválidos, `403` permisos insuficientes, `404` turno inexistente y `409` turno no atendido o historial duplicado.
+Respuestas: `201`, `400`, `403`, `404`, `409` (no atendido o duplicado).
 
 ### Notificaciones
 
-- `GET /notificaciones` — lista las del usuario autenticado, de más reciente a más antigua.
+- `GET /notificaciones` — del usuario autenticado, más reciente primero.
 - `PATCH /notificaciones/:id/leida` — marca como leída una notificación propia.
 
-No hay endpoint público para crear notificaciones. La función interna `crearNotificacion(idUsuario, tipo, mensaje)` está en `src/services/notificacion.service.js` (fecha automática, `leida = 0`).
+No hay endpoint público para crear notificaciones. Uso interno: `crearNotificacion(idUsuario, tipo, mensaje)` en `notificacion.service.js`.
 
-Tipos usados por turnos: `turno_creado`, `turno_cancelado`, `turno_atendido`.
+Tipos de turnos: `turno_creado`, `turno_cancelado`, `turno_atendido`.
 
-### Flujo de prueba (E2E)
+### Reportes y estadísticas (solo `admin`)
+
+Consultas agregadas sobre `turno`, `agenda`, `especialidad` y `sede`. Sin tablas nuevas.
+
+Query obligatoria en todos: `desde` y `hasta` (`YYYY-MM-DD`, inclusive). Filtro sobre `turno.fecha`.
+
+Ejemplo: `?desde=2026-01-01&hasta=2026-03-31`.
+
+| Endpoint | Descripción |
+|----------|-------------|
+| `GET /reportes/turnos-por-especialidad` | Cantidad de turnos por especialidad (todos los estados). Incluye especialidades con `cantidad: 0`. |
+| `GET /reportes/turnos-por-sede` | Cantidad por sede (todos los estados). Incluye sedes con `cantidad: 0`. |
+| `GET /reportes/ranking-medicos` | Ranking completo por turnos **atendidos**. Empates en posición (1, 2, 2, 4). |
+| `GET /reportes/tasa-cancelacion` | `total`, `cancelados`, `tasa_cancelacion` (% con 2 decimales). Sin turnos → tasa `0`. |
+
+Ejemplo de respuesta (`turnos-por-especialidad`):
+
+```json
+{
+  "codigo": 200,
+  "estado": "ok",
+  "mensaje": null,
+  "datos": {
+    "desde": "2026-01-01",
+    "hasta": "2026-03-31",
+    "items": [
+      { "id_especialidad": 1, "descripcion": "Cardiologia", "cantidad": 42 }
+    ]
+  }
+}
+```
+
+Ejemplo (`tasa-cancelacion`):
+
+```json
+{
+  "codigo": 200,
+  "estado": "ok",
+  "mensaje": null,
+  "datos": {
+    "desde": "2026-01-01",
+    "hasta": "2026-03-31",
+    "total": 100,
+    "cancelados": 15,
+    "tasa_cancelacion": 15.00
+  }
+}
+```
+
+Los reportes reflejan el estado actual de los turnos: cancelar o atender un turno actualiza los indicadores sin pasos extra.
+
+Respuestas: `200`, `400` (fechas), `401`, `403`, `500`.
+
+### Auditoría (pendiente)
+
+Logs de auditoría (`id_usuario`, acción, entidad, detalle) y endpoint de consulta con filtros — **implementación del compañero**. Cuando esté en `master`, documentar en Postman/Swagger junto con el resto.
+
+---
+
+## Flujo de prueba (E2E)
 
 1. Login como operador/médico y cargar agenda (`POST /agendas`) si hace falta.
 2. Login como paciente u operador y solicitar turno (`POST /turnos`).
-3. Consultar `GET /turnos/mios` (paciente) o `GET /turnos?id_medico=&fecha=` / `?id_sede=&fecha=` (operador/médico).
-4. Probar alta rechazada por horario fuera de agenda o superpuesto → respuesta `409`.
-5. Cancelar turno (`PATCH /turnos/:id/cancelar`) y verificar `GET /notificaciones` (`turno_cancelado`).
-6. Crear otro turno, atenderlo (`PATCH /turnos/:id/atender`) y verificar notificación `turno_atendido`.
-7. Registrar historial (`POST /historial`) y consultar `GET /historial` como paciente y como médico.
-8. Marcar notificación leída (`PATCH /notificaciones/:id/leida`).
+3. `GET /turnos/mios` (paciente) o `GET /turnos` con `fecha` (operador/médico).
+4. Alta rechazada por horario → `409`.
+5. Cancelar turno → notificación `turno_cancelado`.
+6. Otro turno, atender → notificación `turno_atendido`.
+7. `POST /historial` y `GET /historial` (paciente y médico).
+8. `PATCH /notificaciones/:id/leida`.
+9. Login `admin` → reportes con rango de fechas; cancelar turno y verificar `tasa-cancelacion`.
 
-## Postman
+## Postman / Swagger
 
-Las colecciones de Postman no se versionan en git (contienen credenciales de prueba). Mantené tu copia local en `postman_collection.json` / `postman/` (ya en `.gitignore`) y compartila con el equipo por fuera del repo.
+Las colecciones locales no se versionan en git (credenciales de prueba). Mantener `postman_collection.json` en local (`.gitignore`).
+
+Documentación detallada de requests/responses: completar en Postman o Swagger cuando el módulo de auditoría esté integrado.
 
 Casos mínimos sugeridos para la entrega:
 
 - Turno rechazado por horario (fuera de agenda o superpuesto).
-- Turno cancelado con notificación generada.
-- Turno atendido con historial clínico asociado.
+- Turno cancelado con notificación.
+- Turno atendido con historial clínico.
+- Reportes admin coherentes tras crear/cancelar/atender turnos.

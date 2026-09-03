@@ -33,7 +33,7 @@ export async function obtenerSede(req, res) {
 
 export async function crearSede(req, res) {
   try {
-    const datos = await crearSedeService(req.body);
+    const datos = await crearSedeService(req.body, req.usuario.id);
     return enviarOk(res, 201, datos);
   } catch (error) {
     if (error instanceof ErrorServicio) {
@@ -46,7 +46,7 @@ export async function crearSede(req, res) {
 
 export async function modificarSede(req, res) {
   try {
-    const datos = await modificarSedeService(req.params.id, req.body);
+    const datos = await modificarSedeService(req.params.id, req.body, req.usuario.id);
     return enviarOk(res, 200, datos);
   } catch (error) {
     if (error instanceof ErrorServicio) {
@@ -59,7 +59,7 @@ export async function modificarSede(req, res) {
 
 export async function eliminarSede(req, res) {
   try {
-    await eliminarSedeService(req.params.id);
+    await eliminarSedeService(req.params.id, req.usuario.id);
     return enviarOk(res, 200, { mensaje: 'Sede eliminada' });
   } catch (error) {
     if (error instanceof ErrorServicio) {
