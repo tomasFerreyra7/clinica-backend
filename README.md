@@ -111,7 +111,7 @@ Rutas inexistentes → `404` con `{ "mensaje": "Recurso no encontrado" }`.
 | `/historial` | Sí | `medico` (POST), paciente/médico (GET) | Historial clínico |
 | `/notificaciones` | Sí | cualquier autenticado | Notificaciones del usuario |
 | `/reportes` | Sí | `admin` | Estadísticas de turnos |
-| `/auditoria` | — | — | Pendiente (compañero, semana 4) |
+| `/auditoria` | Sí | `admin` | Logs de auditoría con filtros |
 
 ---
 
@@ -328,9 +328,24 @@ Los reportes reflejan el estado actual de los turnos: cancelar o atender un turn
 
 Respuestas: `200`, `400` (fechas), `401`, `403`, `500`.
 
-### Auditoría (pendiente)
+### Auditoría (solo `admin`)
 
-Logs de auditoría (`id_usuario`, acción, entidad, detalle) y endpoint de consulta con filtros — **implementación del compañero**. Cuando esté en `master`, documentar en Postman/Swagger junto con el resto.
+Registro automático de acciones relevantes en la tabla `log_auditoria`. Un único endpoint de consulta con filtros opcionales.
+
+- `GET /auditoria` — listado de logs, orden más reciente primero.
+
+Query opcionales (todos combinables):
+
+| Parámetro | Tipo | Descripción |
+|-----------|------|-------------|
+| `id_usuario` | entero positivo | Filtrar por usuario que realizó la acción |
+| `entidad` | string | Una de: `usuario`, `cobertura`, `especialidad`, `sede` |
+| `desde` | `YYYY-MM-DD` | Inicio del rango de fechas (requiere `hasta`) |
+| `hasta` | `YYYY-MM-DD` | Fin del rango de fechas (requiere `desde`) |
+
+Cada log contiene: `id`, `id_usuario`, `accion`, `entidad`, `detalle`, `fecha`.
+
+Respuestas: `200`, `400` (filtros inválidos), `401`, `403`.
 
 ---
 
@@ -350,7 +365,7 @@ Logs de auditoría (`id_usuario`, acción, entidad, detalle) y endpoint de consu
 
 Las colecciones locales no se versionan en git (credenciales de prueba). Mantener `postman_collection.json` en local (`.gitignore`).
 
-Documentación detallada de requests/responses: completar en Postman o Swagger cuando el módulo de auditoría esté integrado.
+Documentación detallada de requests/responses en Postman o Swagger.
 
 Casos mínimos sugeridos para la entrega:
 
