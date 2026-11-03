@@ -208,7 +208,7 @@ Si el usuario no es médico, `especialidades` es `[]`.
 - `id` tiene que ser un entero positivo (`400`) y el usuario tiene que existir (`404`).
 - Los campos, según las tablas de "Reglas generales".
 - `dni` o `email` usado por otro usuario: `409`.
-- **Especialidades con agenda (decisión propuesta):** si a un médico se le quita una especialidad que tiene en una agenda de hoy en adelante, `409` "No se puede quitar la especialidad {descripcion} porque el medico tiene agenda con ella".
+- **Especialidades con agenda:** si a un médico se le quita una especialidad que tiene en una agenda de hoy en adelante, `409` "No se puede quitar la especialidad {descripcion} porque el medico tiene agenda con ella".
 
 **Pasos:**
 1. Agregar `actualizarUsuario(id, body, idAdmin)` en el service. Reutiliza los validadores de la tarea 4.
