@@ -460,3 +460,8 @@ Casos mínimos sugeridos para la entrega:
 - Turno cancelado con notificación.
 - Turno atendido con historial clínico.
 - Reportes admin coherentes tras crear/cancelar/atender turnos.
+- Alta de operador, médico y administrador (`POST /usuarios`), y rechazo de un administrador con sede (`400`).
+- Edición de un usuario sin cambiar el rol (`PUT /usuarios/:id`), y rechazo si se intenta cambiar (`400`).
+- Listado de usuarios paginado y con filtros (`GET /usuarios?rol=medico&pagina=1&limite=5`).
+- Paciente actualizando sus datos personales (`PATCH /auth/perfil`).
+- Baja de una especialidad que se usa en la agenda rechazada con `409`.
