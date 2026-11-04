@@ -1,6 +1,7 @@
 import pool from '../database/db.js';
 import { validarTexto } from '../utils/validacion.js';
 import { crearNotificacion } from './notificacion.service.js';
+import { DURACION_TURNO_MIN } from '../config/turnos.js';
 
 class ErrorServicio extends Error {
   constructor(codigo, mensaje) {
@@ -9,7 +10,6 @@ class ErrorServicio extends Error {
   }
 }
 
-const DURACION_TURNO_MIN = 30;
 const REGEX_HORA = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const REGEX_FECHA = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -240,8 +240,8 @@ async function buscarAgenda({ id_medico, id_especialidad, id_sede, fecha }) {
 
 function validarHorarioEnAgenda(agenda, hora) {
   const horaFin = sumarMinutosAHora(hora, DURACION_TURNO_MIN);
-  const dentroDeAgenda = horaAMinutos(agenda.hora_entrada) < horaAMinutos(hora)
-    && horaAMinutos(horaFin) < horaAMinutos(agenda.hora_salida);
+  const dentroDeAgenda = horaAMinutos(agenda.hora_entrada) <= horaAMinutos(hora)
+    && horaAMinutos(horaFin) <= horaAMinutos(agenda.hora_salida);
 
   if (!dentroDeAgenda) {
     throw new ErrorServicio(409, 'Horario fuera de la disponibilidad del medico');
@@ -291,7 +291,25 @@ function mapearTurno(fila) {
     id_medico: fila.id_medico,
     id_especialidad: fila.id_especialidad,
     id_sede: fila.id_sede,
+    ...(fila.nombre_medico !== undefined && {
+      nombre_medico: fila.nombre_medico,
+      apellido_medico: fila.apellido_medico,
+      especialidad: fila.especialidad,
+      sede: fila.sede,
+      nombre_paciente: fila.nombre_paciente,
+      apellido_paciente: fila.apellido_paciente,
+      fecha_nacimiento_paciente: normalizarFechaLocal(fila.fecha_nacimiento_paciente),
+    }),
   };
+}
+
+function normalizarFechaLocal(fecha) {
+  if (fecha instanceof Date) {
+    const mm = String(fecha.getMonth() + 1).padStart(2, '0');
+    const dd = String(fecha.getDate()).padStart(2, '0');
+    return `${fecha.getFullYear()}-${mm}-${dd}`;
+  }
+  return fecha;
 }
 
 async function obtenerTurnoConAgenda(idTurno) {
@@ -328,8 +346,15 @@ function verificarPermisoCancelacion(usuario, turno) {
     return;
   }
 
-  if (usuario.rol === 'operador' || usuario.rol === 'medico') {
+  if (usuario.rol === 'operador') {
     verificarPermisoPorSede(usuario, turno.id_sede);
+    return;
+  }
+
+  if (usuario.rol === 'medico') {
+    if (Number(turno.id_medico) !== Number(usuario.id)) {
+      throw new ErrorServicio(403, 'El turno no pertenece al medico autenticado');
+    }
     return;
   }
 
@@ -346,9 +371,17 @@ function verificarPermisoAtencion(usuario, turno) {
 }
 
 const SQL_LISTAR_TURNO = `SELECT t.id, t.nota, t.fecha, t.hora, t.estado, t.id_paciente, t.id_cobertura, t.id_agenda,
-                                 a.id_medico, a.id_especialidad, a.id_sede
+                                 a.id_medico, a.id_especialidad, a.id_sede,
+                                 m.nombre AS nombre_medico, m.apellido AS apellido_medico,
+                                 e.descripcion AS especialidad, s.nombre AS sede,
+                                 p.nombre AS nombre_paciente, p.apellido AS apellido_paciente,
+                                 p.fecha_nacimiento AS fecha_nacimiento_paciente
                           FROM turno t
-                          INNER JOIN agenda a ON a.id = t.id_agenda`;
+                          INNER JOIN agenda a ON a.id = t.id_agenda
+                          INNER JOIN usuario m ON m.id = a.id_medico
+                          INNER JOIN usuario p ON p.id = t.id_paciente
+                          INNER JOIN especialidad e ON e.id = a.id_especialidad
+                          INNER JOIN sede s ON s.id = a.id_sede`;
 
 async function ejecutarListado(filtros, valores) {
   let sql = SQL_LISTAR_TURNO;
@@ -418,7 +451,44 @@ export async function cancelarTurno(id, usuario) {
   return mapearTurno({ ...turno, estado: 'cancelado' });
 }
 
-export async function atenderTurno(id, usuario) {
+const MAX_TEXTO_CLINICO = 255;
+
+function textoClinico(valor, nombre, { obligatorio }) {
+  if (valor === undefined || valor === null || valor === '') {
+    if (obligatorio) {
+      throw new ErrorServicio(400, `${nombre} es obligatorio para registrar el historial clinico`);
+    }
+    return '';
+  }
+  if (typeof valor !== 'string') {
+    throw new ErrorServicio(400, `${nombre} debe ser un texto`);
+  }
+  const limpio = valor.trim();
+  if (limpio === '' && obligatorio) {
+    throw new ErrorServicio(400, `${nombre} es obligatorio para registrar el historial clinico`);
+  }
+  if (limpio.length > MAX_TEXTO_CLINICO) {
+    throw new ErrorServicio(400, `${nombre} no puede superar los ${MAX_TEXTO_CLINICO} caracteres`);
+  }
+  return limpio;
+}
+
+// Si el body trae datos clinicos se registran junto con la atencion; si viene vacio solo se cambia el estado.
+function parsearHistorialAlAtender(body) {
+  const campos = ['diagnostico', 'tratamiento', 'observaciones'];
+  const trae = body && typeof body === 'object'
+    && campos.some((c) => body[c] !== undefined && body[c] !== null && body[c] !== '');
+  if (!trae) {
+    return null;
+  }
+  return {
+    diagnostico: textoClinico(body.diagnostico, 'diagnostico', { obligatorio: true }),
+    tratamiento: textoClinico(body.tratamiento, 'tratamiento', { obligatorio: true }),
+    observaciones: textoClinico(body.observaciones, 'observaciones', { obligatorio: false }),
+  };
+}
+
+export async function atenderTurno(id, usuario, body = {}) {
   const idTurno = validarIdParam(id);
   const turno = await obtenerTurnoConAgenda(idTurno);
 
@@ -428,7 +498,35 @@ export async function atenderTurno(id, usuario) {
     throw new ErrorServicio(409, 'Solo se pueden atender turnos confirmados');
   }
 
-  await pool.query('UPDATE turno SET estado = ? WHERE id = ?', ['atendido', idTurno]);
+  const historial = parsearHistorialAlAtender(body);
+
+  const conexion = await pool.getConnection();
+  let idHistorial = null;
+  try {
+    await conexion.beginTransaction();
+    const [cambio] = await conexion.query(
+      "UPDATE turno SET estado = 'atendido' WHERE id = ? AND estado = 'confirmado'",
+      [idTurno]
+    );
+    if (cambio.affectedRows === 0) {
+      throw new ErrorServicio(409, 'Solo se pueden atender turnos confirmados');
+    }
+    if (historial) {
+      const [insercion] = await conexion.query(
+        `INSERT INTO historial_clinico
+           (id_turno, id_medico, id_paciente, diagnostico, tratamiento, observaciones)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [idTurno, turno.id_medico, turno.id_paciente, historial.diagnostico, historial.tratamiento, historial.observaciones]
+      );
+      idHistorial = insercion.insertId;
+    }
+    await conexion.commit();
+  } catch (error) {
+    await conexion.rollback();
+    throw error;
+  } finally {
+    conexion.release();
+  }
 
   await crearNotificacion(
     turno.id_paciente,
@@ -436,7 +534,8 @@ export async function atenderTurno(id, usuario) {
     `Turno atendido el ${normalizarFechaRespuesta(turno.fecha)} a las ${turno.hora}`
   );
 
-  return mapearTurno({ ...turno, estado: 'atendido' });
+  const respuesta = mapearTurno({ ...turno, estado: 'atendido' });
+  return historial ? { ...respuesta, historial: { id: idHistorial, ...historial } } : respuesta;
 }
 
 export async function listarMisTurnos(usuario) {
@@ -457,9 +556,6 @@ export async function listarTurnos(query = {}, usuario) {
   const tieneSede = query.id_sede !== undefined && query.id_sede !== '';
 
   if (usuario?.rol === 'medico') {
-    if (tieneSede) {
-      throw new ErrorServicio(400, 'id_sede no aplica para el listado del medico');
-    }
     if (tieneMedico) {
       const idQuery = validarEnteroPositivo(Number(query.id_medico), 'id_medico');
       if (idQuery !== Number(usuario.id)) {
@@ -467,10 +563,14 @@ export async function listarTurnos(query = {}, usuario) {
       }
     }
 
-    return ejecutarListado(
-      ['a.id_medico = ?', 't.fecha = ?'],
-      [Number(usuario.id), fecha]
-    );
+    const filtros = ['a.id_medico = ?', 't.fecha = ?'];
+    const valores = [Number(usuario.id), fecha];
+    if (tieneSede) {
+      filtros.push('a.id_sede = ?');
+      valores.push(validarEnteroPositivo(Number(query.id_sede), 'id_sede'));
+    }
+
+    return ejecutarListado(filtros, valores);
   }
 
   if (usuario?.rol === 'operador') {
@@ -490,7 +590,6 @@ export async function listarTurnos(query = {}, usuario) {
     }
 
     const idSede = validarEnteroPositivo(Number(query.id_sede), 'id_sede');
-    verificarPermisoPorSede(usuario, idSede);
 
     return ejecutarListado(
       ['a.id_sede = ?', 't.fecha = ?'],

@@ -36,7 +36,7 @@ export async function cancelar(req, res) {
 
 export async function atender(req, res) {
   try {
-    const datos = await atenderTurno(req.params.id, req.usuario);
+    const datos = await atenderTurno(req.params.id, req.usuario, req.body);
     return enviarOk(res, 200, datos);
   } catch (error) {
     if (error instanceof ErrorServicio) {

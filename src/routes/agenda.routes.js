@@ -47,7 +47,7 @@ router.use(verificarToken, verificarRol('operador', 'medico'));
  *       400:
  *         description: Datos invalidos o relaciones inexistentes
  *       403:
- *         description: Medico no puede gestionar agenda de otro medico
+ *         description: Medico no puede gestionar agenda de otro medico, u operador sobre una sede que no es la suya
  *       409:
  *         description: Horario se solapa con otra agenda
  */
@@ -71,13 +71,17 @@ router.post('/', crear);
  *         schema:
  *           type: integer
  *       - in: query
+ *         name: id_especialidad
+ *         schema:
+ *           type: integer
+ *       - in: query
  *         name: fecha
  *         schema:
  *           type: string
  *           format: date
  *     responses:
  *       200:
- *         description: Lista de agendas
+ *         description: Lista de agendas, con nombre y apellido del medico, descripcion de la especialidad y nombre de la sede
  */
 router.get('/', listar);
 
@@ -124,7 +128,9 @@ router.get('/', listar);
  *       404:
  *         description: Agenda no encontrada
  *       409:
- *         description: Horario se solapa
+ *         description: Horario se solapa, o hay turnos confirmados que quedarian fuera del nuevo rango (o se cambia fecha/medico/especialidad/sede con turnos confirmados)
+ *       403:
+ *         description: Medico sobre agenda ajena u operador sobre una sede que no es la suya
  */
 router.put('/:id', actualizar);
 
@@ -145,6 +151,10 @@ router.put('/:id', actualizar);
  *     responses:
  *       200:
  *         description: Agenda eliminada
+ *       403:
+ *         description: Medico sobre agenda ajena u operador sobre una sede que no es la suya
+ *       409:
+ *         description: La agenda tiene turnos confirmados, o turnos cancelados/atendidos asociados
  *       404:
  *         description: Agenda no encontrada
  */

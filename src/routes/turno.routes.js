@@ -131,7 +131,11 @@ router.patch(
  * /turnos/{id}/atender:
  *   patch:
  *     tags: [Turnos]
- *     summary: Marcar turno como atendido (medico)
+ *     summary: Marcar turno como atendido (medico), opcionalmente registrando el historial clinico
+ *     description: |
+ *       Si el body trae datos clinicos (diagnostico y tratamiento obligatorios, observaciones opcional,
+ *       maximo 255 caracteres cada uno) el cambio de estado y el historial se guardan en una sola
+ *       transaccion: si algo falla no queda ninguno de los dos. Sin body solo cambia el estado.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -140,9 +144,27 @@ router.patch(
  *         required: true
  *         schema:
  *           type: integer
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               diagnostico:
+ *                 type: string
+ *                 example: Esguince grado I
+ *               tratamiento:
+ *                 type: string
+ *                 example: Reposo y antiinflamatorios
+ *               observaciones:
+ *                 type: string
+ *                 example: Control en 15 dias
  *     responses:
  *       200:
- *         description: Turno marcado como atendido
+ *         description: Turno marcado como atendido (con el historial creado si se enviaron datos clinicos)
+ *       400:
+ *         description: Datos clinicos incompletos o demasiado largos
  *       403:
  *         description: El turno no pertenece al medico
  *       409:

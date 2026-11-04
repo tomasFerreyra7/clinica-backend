@@ -104,8 +104,11 @@ Rutas inexistentes → `404` con `{ "mensaje": "Recurso no encontrado" }`.
 | `GET /health` | No | — | Estado del servidor y DB |
 | `/auth` | Parcial | — | Registro, login, perfil |
 | `/coberturas` | Parcial | `admin` (CRUD) | Coberturas médicas |
-| `/sedes` | Sí | `admin` | Sedes |
-| `/especialidades` | Sí | `admin` | Especialidades |
+| `/sedes` | Sí | lectura: cualquier autenticado; escritura: `admin` | Sedes |
+| `/especialidades` | Sí | lectura: cualquier autenticado; escritura: `admin` | Especialidades |
+| `/medicos` | Sí | cualquier autenticado | Listado de médicos con especialidades |
+| `/pacientes` | Sí | `operador`, `medico`, `admin` | Búsqueda de pacientes por DNI o apellido |
+| `/disponibilidad` | Sí | `paciente`, `operador` | Fechas y horarios libres de un médico |
 | `/agendas` | Sí | `operador`, `medico` | Agenda médica |
 | `/turnos` | Sí | varios | Turnos |
 | `/historial` | Sí | `medico` (POST), paciente/médico (GET) | Historial clínico |
@@ -142,7 +145,7 @@ Rutas inexistentes → `404` con `{ "mensaje": "Recurso no encontrado" }`.
 - `PUT /coberturas/:id` — solo `admin`. Body: `{ "nombre": "..." }`.
 - `DELETE /coberturas/:id` — solo `admin`. Baja lógica (`activo = 0`). `409` si tiene usuarios asociados.
 
-### Sedes (solo `admin`)
+### Sedes (lectura: cualquier usuario autenticado; alta, modificación y baja: solo `admin`)
 
 Body de alta/modificación: `{ "nombre", "direccion", "telefono" }` (nombre máx. 50, dirección 100, teléfono 15).
 
@@ -152,12 +155,39 @@ Body de alta/modificación: `{ "nombre", "direccion", "telefono" }` (nombre máx
 - `PUT /sedes/:id` — modificación.
 - `DELETE /sedes/:id` — baja lógica. `409` si tiene médicos, operadores o agenda asociada.
 
-### Especialidades (solo `admin`)
+### Especialidades (lectura: cualquier usuario autenticado; alta, modificación y baja: solo `admin`)
 
 - `POST /especialidades` — alta. Body: `{ "descripcion": "..." }` (máx. 30 caracteres).
 - `GET /especialidades` — listado.
 - `PUT /especialidades/:id` — modificación. Body: `{ "descripcion": "..." }`.
 - `DELETE /especialidades/:id` — baja. `409` si tiene filas en `medico_especialidad` o si se usa en la agenda.
+
+### Médicos (cualquier usuario autenticado)
+
+- `GET /medicos` — lista médicos con sus especialidades. Devuelve solo `id`, `nombre`, `apellido` y `especialidades: [{ id, descripcion }]`, sin otros datos personales.
+  - Query opcionales: `id_especialidad`, `id_sede`. Con `id_sede` se devuelven los médicos cuya sede es esa **o** que tienen agenda cargada en ella (un médico puede atender en varias sedes). Si se combina con `id_especialidad`, la agenda considerada es la de esa especialidad.
+  - Ids inválidos → `400`. Orden por apellido y nombre.
+
+### Pacientes (roles `operador`, `medico`, `admin`)
+
+- `GET /pacientes?dni=&apellido=` — búsqueda de pacientes. Requiere al menos un filtro.
+  - `dni`: solo números, hasta 8 dígitos; busca por prefijo.
+  - `apellido`: entre 2 y 30 caracteres; busca por prefijo, sin distinguir mayúsculas. Los comodines `%` y `_` se toman como texto literal.
+  - Se pueden combinar (AND). Máximo 50 resultados, ordenados por apellido y nombre. Solo devuelve usuarios con rol paciente.
+  - Respuesta: `id`, `nombre`, `apellido`, `dni`, `fecha_nacimiento` (`YYYY-MM-DD`), `id_cobertura`, `cobertura_nombre`. No expone contraseña, email ni teléfono.
+  - Sin filtros o filtros inválidos (o repetidos) → `400`.
+
+### Disponibilidad (roles `paciente` | `operador`)
+
+Duración de cada turno: **30 minutos** (constante `DURACION_TURNO_MIN` en `src/config/turnos.js`, usada por el alta de turno, la validación de rangos y estos endpoints).
+
+- `GET /disponibilidad/fechas?id_medico=&id_especialidad=&id_sede=` — fechas (`YYYY-MM-DD`, ascendentes, desde hoy) en las que el médico tiene agenda para esa especialidad y sede y queda al menos un horario libre.
+- `GET /disponibilidad/horarios?id_medico=&id_especialidad=&id_sede=&fecha=` — horarios de inicio libres (`HH:MM`, ascendentes).
+  - Se generan cada 30 minutos desde la `hora_entrada` de cada rango, mientras el turno entre completo antes de la `hora_salida` (agenda 09:00–13:00 → 09:00 a 12:30).
+  - Se descartan los que se superponen con turnos `confirmado` del médico en esa fecha (en cualquiera de sus sedes). Los turnos cancelados liberan el horario.
+  - Si la fecha es hoy, se descartan los horarios que ya pasaron; una fecha pasada devuelve lista vacía.
+  - Todo horario ofrecido es aceptado por `POST /turnos`.
+- No devuelve datos de pacientes. Parámetros faltantes, inválidos o repetidos → `400`. Ids inexistentes → lista vacía.
 
 ### Agenda (roles `operador` | `medico`)
 
@@ -175,7 +205,7 @@ Body de alta/modificación:
 ```
 
 - `POST /agendas` — alta de bloque horario.
-- `GET /agendas` — listado. Query opcionales: `id_medico`, `id_sede`, `fecha`.
+- `GET /agendas` — listado. Query opcionales: `id_medico`, `id_sede`, `id_especialidad`, `fecha`. Además de los ids, cada fila trae `medico_nombre`, `medico_apellido`, `especialidad_descripcion` y `sede_nombre`.
 - `PUT /agendas/:id` — modificación (mismas validaciones que el alta).
 - `DELETE /agendas/:id` — baja.
 
@@ -187,7 +217,13 @@ Reglas de negocio:
 - El médico debe tener esa especialidad en `medico_especialidad`.
 - No se permiten horarios solapados del mismo médico en la misma fecha.
 - **Médico:** solo gestiona su propia agenda (`id_medico` = usuario del token). Si intenta la de otro → `403`.
-- **Operador:** puede gestionar la agenda de cualquier médico.
+- **Operador:** puede gestionar la agenda de cualquier médico, pero **solo en su sede**: alta, modificación y baja de rangos de otra sede (o sin sede asignada) → `403`. La consulta (`GET /agendas`) de cualquier sede sigue permitida.
+- **Médico en más de una sede:** la sede de cada rango es la indicada en la agenda; el médico puede cargar rangos en cualquier sede.
+- **Rangos con turnos confirmados:**
+  - No se puede eliminar un rango con turnos `confirmado` → `409`.
+  - No se puede eliminar un rango con turnos `cancelado` o `atendido` asociados (integridad del historial) → `409`.
+  - No se puede modificar un rango dejando algún turno `confirmado` fuera del nuevo horario → `409`.
+  - No se puede cambiar fecha, médico, especialidad o sede de un rango con turnos confirmados → `409`.
 - **Paciente:** `403` en todos los endpoints de agenda.
 
 ### Turnos
@@ -217,8 +253,9 @@ Endpoints:
 
 - `POST /turnos` — solicitar turno. Roles: `paciente`, `operador`. Estado inicial `confirmado`; notifica `turno_creado`.
 - `PATCH /turnos/:id/cancelar` — cancelar. Roles: `paciente`, `operador`, `medico`. Pasa a `cancelado`; notifica `turno_cancelado`.
-- `PATCH /turnos/:id/atender` — marcar atendido. Solo `medico`. Pasa a `atendido`; notifica `turno_atendido`.
+- `PATCH /turnos/:id/atender` — marcar atendido. Solo `medico`. Pasa a `atendido`; notifica `turno_atendido`. Body opcional `{ diagnostico, tratamiento, observaciones }` (máx. 255 caracteres cada uno; `diagnostico` y `tratamiento` obligatorios si se envía alguno): el cambio de estado y el historial clínico se guardan en **una sola transacción**, si algo falla no queda ninguno. La respuesta incluye `historial`. Sin body solo cambia el estado.
 - `GET /turnos/mios` — turnos del paciente autenticado (`paciente`). Orden: `fecha ASC`, `hora ASC`.
+- Los listados de turnos (`GET /turnos/mios` y `GET /turnos`) devuelven, además de los ids, `nombre_medico`, `apellido_medico`, `especialidad`, `sede`, `nombre_paciente`, `apellido_paciente` y `fecha_nacimiento_paciente` (`YYYY-MM-DD`, para calcular la edad).
 - `GET /turnos` — listado por fecha. Roles: `operador`, `medico`. Query obligatoria: `fecha`.
   - Por médico: `id_medico` + `fecha`.
   - Por sede (solo operador): `id_sede` + `fecha`.
@@ -229,7 +266,7 @@ Reglas de negocio (alta):
 - `fecha` y `hora` no pueden ser pasadas.
 - Deben existir médico, especialidad, sede activa y vínculo en `medico_especialidad`.
 - Debe existir bloque de agenda para médico/especialidad/sede/fecha.
-- El turno debe caber dentro del bloque (`hora_entrada < hora_inicio` y `hora_fin < hora_salida`).
+- El turno debe caber dentro del bloque, extremos incluidos (`hora_entrada <= hora_inicio` y `hora_fin <= hora_salida`). Ej.: agenda 09:00–13:00 admite turnos desde 09:00 hasta 12:30.
 - Sin solapamiento con otro turno `confirmado` del mismo médico y fecha (intervalo 30 min).
 - **Operador:** solo en su sede (`id_sede` del body = token).
 - **Médico:** no puede crear turnos (`403`).
@@ -238,23 +275,24 @@ Reglas de negocio (cancelación):
 
 - Solo desde `confirmado`.
 - **Paciente:** solo sus turnos.
-- **Operador / médico:** solo turnos de su sede.
+- **Operador:** solo turnos de su sede.
+- **Médico:** solo sus propios turnos, en cualquiera de las sedes donde atiende (turno de otro médico → `403`).
 
 Reglas de negocio (atención):
 
 - Solo desde `confirmado`.
 - Solo el médico dueño del turno.
-- No crea historial; eso es `POST /historial`.
+- El historial se puede cargar en el mismo pedido (ver arriba) o después con `POST /historial`.
 
 Reglas de negocio (listados):
 
-- **Médico:** solo sus turnos; `id_medico` ajeno → `403`.
-- **Operador:** `id_medico` o `id_sede`, no ambos; sede solo la del token.
+- **Médico:** solo sus turnos (de todas sus sedes); `id_medico` ajeno → `403`. `id_sede` opcional para filtrar por sede.
+- **Operador:** `id_medico` o `id_sede`, no ambos. Puede consultar cualquier sede o médico (solo lectura); modificar o cancelar queda limitado a su sede.
 
 ### Historial clínico
 
 - `POST /historial` — solo `medico`.
-- `GET /historial` — paciente ve el suyo; médico ve el de turnos que atendió.
+- `GET /historial` — paciente ve el suyo; médico ve únicamente el de turnos que atendió él mismo. Query opcional `id_paciente`: el médico obtiene solo los registros de ese paciente que él atendió (los de otros médicos nunca se devuelven); el paciente solo puede pedir el suyo (otro → `403`). Cada registro incluye, además de los datos clínicos, `fecha_turno`, `hora_turno`, `especialidad_descripcion`, `sede_nombre`, `paciente_nombre`, `paciente_apellido`, `medico_nombre` y `medico_apellido`. Orden: turno más reciente primero.
 
 Body de `POST /historial`:
 

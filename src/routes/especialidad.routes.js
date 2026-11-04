@@ -4,7 +4,7 @@ import { crear, listar, actualizar, eliminar } from '../controllers/especialidad
 
 const router = Router();
 
-router.use(verificarToken, verificarRol('admin'));
+router.use(verificarToken);
 
 /**
  * @swagger
@@ -33,7 +33,7 @@ router.use(verificarToken, verificarRol('admin'));
  *       409:
  *         description: Descripcion duplicada
  */
-router.post('/', crear);
+router.post('/', verificarRol('admin'), crear);
 
 /**
  * @swagger
@@ -82,7 +82,7 @@ router.get('/', listar);
  *       409:
  *         description: Descripcion duplicada
  */
-router.put('/:id', actualizar);
+router.put('/:id', verificarRol('admin'), actualizar);
 
 /**
  * @swagger
@@ -106,6 +106,6 @@ router.put('/:id', actualizar);
  *       409:
  *         description: Tiene medicos asociados o se usa en la agenda
  */
-router.delete('/:id', eliminar);
+router.delete('/:id', verificarRol('admin'), eliminar);
 
 export default router;

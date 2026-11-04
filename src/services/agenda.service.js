@@ -1,4 +1,5 @@
 import pool from '../database/db.js';
+import { DURACION_TURNO_MIN } from '../config/turnos.js';
 
 class ErrorServicio extends Error {
   constructor(codigo, mensaje) {
@@ -153,15 +154,77 @@ function mapearAgenda(fila) {
   };
 }
 
+function mapearAgendaDetallada(fila) {
+  return {
+    ...mapearAgenda(fila),
+    medico_nombre: fila.medico_nombre,
+    medico_apellido: fila.medico_apellido,
+    especialidad_descripcion: fila.especialidad_descripcion,
+    sede_nombre: fila.sede_nombre,
+  };
+}
+
 function verificarAgendaDelMedico(usuario, idMedicoObjetivo) {
   if (usuario?.rol === 'medico' && Number(usuario.id) !== Number(idMedicoObjetivo)) {
     throw new ErrorServicio(403, 'No tiene permisos para gestionar la agenda de otro medico');
   }
 }
 
+function verificarSedeDelOperador(usuario, idSede) {
+  if (usuario?.rol !== 'operador') {
+    return;
+  }
+  if (usuario.id_sede === null || usuario.id_sede === undefined) {
+    throw new ErrorServicio(403, 'El operador no tiene una sede asignada');
+  }
+  if (Number(usuario.id_sede) !== Number(idSede)) {
+    throw new ErrorServicio(403, 'No tiene permisos para gestionar la agenda de otra sede');
+  }
+}
+
+async function obtenerTurnosConfirmados(idAgenda) {
+  const [turnos] = await pool.query(
+    "SELECT id, hora FROM turno WHERE id_agenda = ? AND estado = 'confirmado'",
+    [idAgenda]
+  );
+  return turnos;
+}
+
+async function validarTurnosConfirmadosAlModificar(agendaActual, datos) {
+  const turnos = await obtenerTurnosConfirmados(agendaActual.id);
+  if (turnos.length === 0) {
+    return;
+  }
+
+  const cambiaIdentidad = normalizarFechaRespuesta(agendaActual.fecha) !== datos.fecha
+    || Number(agendaActual.id_medico) !== datos.id_medico
+    || Number(agendaActual.id_especialidad) !== datos.id_especialidad
+    || Number(agendaActual.id_sede) !== datos.id_sede;
+  if (cambiaIdentidad) {
+    throw new ErrorServicio(
+      409,
+      'No se puede cambiar la fecha, el medico, la especialidad o la sede de una agenda con turnos confirmados'
+    );
+  }
+
+  const entrada = horaAMinutos(datos.hora_entrada);
+  const salida = horaAMinutos(datos.hora_salida);
+  const fueraDeRango = turnos.some((t) => {
+    const inicio = horaAMinutos(t.hora);
+    return inicio < entrada || inicio + DURACION_TURNO_MIN > salida;
+  });
+  if (fueraDeRango) {
+    throw new ErrorServicio(
+      409,
+      'No se puede modificar el horario: hay turnos confirmados que quedarian fuera del nuevo rango'
+    );
+  }
+}
+
 export async function crearAgenda(body, usuario) {
   const datos = parsearDatosAgenda(body);
   verificarAgendaDelMedico(usuario, datos.id_medico);
+  verificarSedeDelOperador(usuario, datos.id_sede);
   await validarRelacionesAgenda(datos);
   await validarSolapamiento(datos);
 
@@ -190,32 +253,42 @@ export async function listarAgendas(query = {}, usuario) {
       const idQuery = validarEnteroPositivo(Number(query.id_medico), 'id_medico');
       verificarAgendaDelMedico(usuario, idQuery);
     }
-    filtros.push('id_medico = ?');
+    filtros.push('a.id_medico = ?');
     valores.push(Number(usuario.id));
   } else if (query.id_medico !== undefined && query.id_medico !== '') {
-    filtros.push('id_medico = ?');
+    filtros.push('a.id_medico = ?');
     valores.push(validarEnteroPositivo(Number(query.id_medico), 'id_medico'));
   }
 
   if (query.id_sede !== undefined && query.id_sede !== '') {
-    filtros.push('id_sede = ?');
+    filtros.push('a.id_sede = ?');
     valores.push(validarEnteroPositivo(Number(query.id_sede), 'id_sede'));
   }
 
+  if (query.id_especialidad !== undefined && query.id_especialidad !== '') {
+    filtros.push('a.id_especialidad = ?');
+    valores.push(validarEnteroPositivo(Number(query.id_especialidad), 'id_especialidad'));
+  }
+
   if (query.fecha !== undefined && query.fecha !== '') {
-    filtros.push('fecha = ?');
+    filtros.push('a.fecha = ?');
     valores.push(validarFecha(query.fecha));
   }
 
-  let sql = `SELECT id, hora_entrada, hora_salida, fecha, id_medico, id_especialidad, id_sede
-             FROM agenda`;
+  let sql = `SELECT a.id, a.hora_entrada, a.hora_salida, a.fecha, a.id_medico, a.id_especialidad, a.id_sede,
+                    m.nombre AS medico_nombre, m.apellido AS medico_apellido,
+                    e.descripcion AS especialidad_descripcion, s.nombre AS sede_nombre
+             FROM agenda a
+             INNER JOIN usuario m ON m.id = a.id_medico
+             INNER JOIN especialidad e ON e.id = a.id_especialidad
+             INNER JOIN sede s ON s.id = a.id_sede`;
   if (filtros.length > 0) {
     sql += ` WHERE ${filtros.join(' AND ')}`;
   }
-  sql += ' ORDER BY fecha ASC, hora_entrada ASC';
+  sql += ' ORDER BY a.fecha ASC, a.hora_entrada ASC';
 
   const [filas] = await pool.query(sql, valores);
-  return filas.map(mapearAgenda);
+  return filas.map(mapearAgendaDetallada);
 }
 
 function validarIdParam(id) {
@@ -229,7 +302,7 @@ export async function actualizarAgenda(id, body, usuario) {
   const idAgenda = validarIdParam(id);
 
   const [existentes] = await pool.query(
-    'SELECT id, id_medico FROM agenda WHERE id = ?',
+    'SELECT id, id_medico, id_especialidad, id_sede, fecha FROM agenda WHERE id = ?',
     [idAgenda]
   );
   if (existentes.length === 0) {
@@ -237,11 +310,14 @@ export async function actualizarAgenda(id, body, usuario) {
   }
 
   verificarAgendaDelMedico(usuario, existentes[0].id_medico);
+  verificarSedeDelOperador(usuario, existentes[0].id_sede);
 
   const datos = parsearDatosAgenda(body);
   verificarAgendaDelMedico(usuario, datos.id_medico);
+  verificarSedeDelOperador(usuario, datos.id_sede);
   await validarRelacionesAgenda(datos);
   await validarSolapamiento({ ...datos, excluirId: idAgenda });
+  await validarTurnosConfirmadosAlModificar(existentes[0], datos);
 
   await pool.query(
     `UPDATE agenda
@@ -265,7 +341,7 @@ export async function eliminarAgenda(id, usuario) {
   const idAgenda = validarIdParam(id);
 
   const [existentes] = await pool.query(
-    'SELECT id, id_medico FROM agenda WHERE id = ?',
+    'SELECT id, id_medico, id_sede FROM agenda WHERE id = ?',
     [idAgenda]
   );
   if (existentes.length === 0) {
@@ -273,6 +349,20 @@ export async function eliminarAgenda(id, usuario) {
   }
 
   verificarAgendaDelMedico(usuario, existentes[0].id_medico);
+  verificarSedeDelOperador(usuario, existentes[0].id_sede);
+
+  const turnosConfirmados = await obtenerTurnosConfirmados(idAgenda);
+  if (turnosConfirmados.length > 0) {
+    throw new ErrorServicio(409, 'No se puede eliminar la agenda: tiene turnos confirmados');
+  }
+
+  const [turnosAsociados] = await pool.query(
+    'SELECT id FROM turno WHERE id_agenda = ? LIMIT 1',
+    [idAgenda]
+  );
+  if (turnosAsociados.length > 0) {
+    throw new ErrorServicio(409, 'No se puede eliminar la agenda: tiene turnos cancelados o atendidos asociados');
+  }
 
   await pool.query('DELETE FROM agenda WHERE id = ?', [idAgenda]);
   return { id: idAgenda };

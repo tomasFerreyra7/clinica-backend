@@ -16,7 +16,7 @@ export async function crear(req, res) {
 
 export async function listar(req, res) {
   try {
-    const datos = await listarHistorial(req.usuario);
+    const datos = await listarHistorial(req.usuario, req.query);
     return enviarOk(res, 200, datos, 'Historial clinico obtenido correctamente');
   } catch (error) {
     if (error instanceof ErrorServicio) {
