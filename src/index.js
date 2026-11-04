@@ -18,6 +18,7 @@ import auditoriaRoutes from './routes/auditoria.routes.js';
 import medicoRoutes from './routes/medico.routes.js';
 import pacienteRoutes from './routes/paciente.routes.js';
 import disponibilidadRoutes from './routes/disponibilidad.routes.js';
+import usuarioRoutes from './routes/usuario.routes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -51,6 +52,7 @@ app.use('/auditoria', auditoriaRoutes);
 app.use('/medicos', medicoRoutes);
 app.use('/pacientes', pacienteRoutes);
 app.use('/disponibilidad', disponibilidadRoutes);
+app.use('/usuarios', usuarioRoutes);
 
 // 404
 app.use((req, res) => {

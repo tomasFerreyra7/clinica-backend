@@ -1,5 +1,11 @@
 import { enviarOk, enviarError } from '../utils/respuesta.js';
-import { registrarPaciente, autenticar, obtenerPerfil, ErrorServicio } from '../services/auth.service.js';
+import {
+  registrarPaciente,
+  autenticar,
+  obtenerPerfil,
+  actualizarPerfilPaciente,
+  ErrorServicio,
+} from '../services/auth.service.js';
 
 export async function registro(req, res) {
   try {
@@ -37,5 +43,18 @@ export async function perfil(req, res) {
     }
     console.error(error);
     return enviarError(res, 500, 'Error al obtener el perfil');
+  }
+}
+
+export async function actualizarPerfil(req, res) {
+  try {
+    const datos = await actualizarPerfilPaciente(req.usuario.id, req.body);
+    return enviarOk(res, 200, datos);
+  } catch (error) {
+    if (error instanceof ErrorServicio) {
+      return enviarError(res, error.codigo, error.message);
+    }
+    console.error(error);
+    return enviarError(res, 500, 'Error al actualizar el perfil');
   }
 }

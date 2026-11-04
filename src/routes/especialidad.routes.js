@@ -104,7 +104,7 @@ router.put('/:id', verificarRol('admin'), actualizar);
  *       404:
  *         description: Especialidad no encontrada
  *       409:
- *         description: Tiene medicos asociados
+ *         description: Tiene medicos asociados o se usa en la agenda
  */
 router.delete('/:id', verificarRol('admin'), eliminar);
 
