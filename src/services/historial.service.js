@@ -18,6 +18,9 @@ function validarTexto(valor, nombre) {
   if (typeof valor !== 'string' || !valor.trim()) {
     throw new ErrorServicio(400, `${nombre} es obligatorio`);
   }
+  if (valor.trim().length > 255) {
+    throw new ErrorServicio(400, `${nombre} no puede superar los 255 caracteres`);
+  }
   return valor.trim();
 }
 
@@ -78,23 +81,53 @@ export async function crearHistorial(body, usuario) {
   return { id: resultado.insertId, ...datos };
 }
 
-export async function listarHistorial(usuario) {
+function formatearFechaLocal(valor) {
+  if (valor instanceof Date) {
+    const mm = String(valor.getMonth() + 1).padStart(2, '0');
+    const dd = String(valor.getDate()).padStart(2, '0');
+    return `${valor.getFullYear()}-${mm}-${dd}`;
+  }
+  return valor;
+}
+
+export async function listarHistorial(usuario, query = {}) {
   if (!['paciente', 'medico'].includes(usuario?.rol)) {
     throw new ErrorServicio(403, 'No tiene permisos para consultar historiales');
   }
 
-  const condiciones = usuario.rol === 'paciente' ? 'h.id_paciente = ?' : 'h.id_medico = ?';
+  const condiciones = [usuario.rol === 'paciente' ? 'h.id_paciente = ?' : 'h.id_medico = ?'];
+  const valores = [usuario.id];
+
+  const tieneFiltroPaciente = query.id_paciente !== undefined && query.id_paciente !== '';
+  if (tieneFiltroPaciente) {
+    const idPaciente = validarId(query.id_paciente, 'id_paciente');
+    if (usuario.rol === 'paciente' && idPaciente !== Number(usuario.id)) {
+      throw new ErrorServicio(403, 'No tiene permisos para consultar el historial de otro paciente');
+    }
+    condiciones.push('h.id_paciente = ?');
+    valores.push(idPaciente);
+  }
 
   const [filas] = await pool.query(
-    `SELECT h.id, h.id_turno, h.diagnostico, h.tratamiento,
-            h.observaciones, h.fecha_registro
+    `SELECT h.id, h.id_turno, h.id_paciente, h.id_medico, h.diagnostico, h.tratamiento,
+            h.observaciones, h.fecha_registro,
+            t.fecha AS fecha_turno, t.hora AS hora_turno,
+            e.descripcion AS especialidad_descripcion, s.nombre AS sede_nombre,
+            p.nombre AS paciente_nombre, p.apellido AS paciente_apellido,
+            m.nombre AS medico_nombre, m.apellido AS medico_apellido
      FROM historial_clinico h
-     WHERE ${condiciones}
-     ORDER BY h.fecha_registro DESC, h.id DESC`,
-    [usuario.id]
+     INNER JOIN turno t ON t.id = h.id_turno
+     INNER JOIN agenda a ON a.id = t.id_agenda
+     INNER JOIN especialidad e ON e.id = a.id_especialidad
+     INNER JOIN sede s ON s.id = a.id_sede
+     INNER JOIN usuario p ON p.id = h.id_paciente
+     INNER JOIN usuario m ON m.id = h.id_medico
+     WHERE ${condiciones.join(' AND ')}
+     ORDER BY t.fecha DESC, t.hora DESC, h.id DESC`,
+    valores
   );
 
-  return filas;
+  return filas.map((f) => ({ ...f, fecha_turno: formatearFechaLocal(f.fecha_turno) }));
 }
 
 export { ErrorServicio };

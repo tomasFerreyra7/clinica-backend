@@ -15,6 +15,9 @@ import historialRoutes from './routes/historial.routes.js';
 import turnoRoutes from './routes/turno.routes.js';
 import reporteRoutes from './routes/reporte.routes.js';
 import auditoriaRoutes from './routes/auditoria.routes.js';
+import medicoRoutes from './routes/medico.routes.js';
+import pacienteRoutes from './routes/paciente.routes.js';
+import disponibilidadRoutes from './routes/disponibilidad.routes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -45,6 +48,9 @@ app.use('/historial', historialRoutes);
 app.use('/turnos', turnoRoutes);
 app.use('/reportes', reporteRoutes);
 app.use('/auditoria', auditoriaRoutes);
+app.use('/medicos', medicoRoutes);
+app.use('/pacientes', pacienteRoutes);
+app.use('/disponibilidad', disponibilidadRoutes);
 
 // 404
 app.use((req, res) => {

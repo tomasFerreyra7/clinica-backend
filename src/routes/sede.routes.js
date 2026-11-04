@@ -22,7 +22,7 @@ const router = Router();
  *       200:
  *         description: Lista de sedes
  */
-router.get('/', verificarToken, verificarRol('admin'), listarSedes);
+router.get('/', verificarToken, listarSedes);
 
 /**
  * @swagger
@@ -44,7 +44,7 @@ router.get('/', verificarToken, verificarRol('admin'), listarSedes);
  *       404:
  *         description: Sede no encontrada
  */
-router.get('/:id', verificarToken, verificarRol('admin'), obtenerSede);
+router.get('/:id', verificarToken, obtenerSede);
 
 /**
  * @swagger
