@@ -123,6 +123,17 @@ export async function eliminarEspecialidad(id, idUsuario) {
     );
   }
 
+  const [agendas] = await pool.query(
+    'SELECT id FROM agenda WHERE id_especialidad = ? LIMIT 1',
+    [idNum]
+  );
+  if (agendas.length > 0) {
+    throw new ErrorServicio(
+      409,
+      'No se puede eliminar la especialidad porque se usa en la agenda'
+    );
+  }
+
   await pool.query('DELETE FROM especialidad WHERE id = ?', [idNum]);
 
   await registrarAuditoria({
