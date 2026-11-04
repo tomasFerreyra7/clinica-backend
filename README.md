@@ -112,6 +112,7 @@ Rutas inexistentes → `404` con `{ "mensaje": "Recurso no encontrado" }`.
 | `/notificaciones` | Sí | cualquier autenticado | Notificaciones del usuario |
 | `/reportes` | Sí | `admin` | Estadísticas de turnos |
 | `/auditoria` | Sí | `admin` | Logs de auditoría con filtros |
+| `/usuarios` | Sí | `admin` | Gestión de usuarios (listado paginado, alta y edición) |
 
 ---
 
@@ -128,6 +129,10 @@ Rutas inexistentes → `404` con `{ "mensaje": "Recurso no encontrado" }`.
 - `POST /auth/login` — Body: `dni`, `password`.
   - Respuesta en `datos`: `{ "token", "usuario": { "id", "rol", "id_sede" } }`.
 - `GET /auth/perfil` — protegido (`verificarToken`). Devuelve datos del usuario autenticado.
+- `PATCH /auth/perfil` — solo `paciente`. Actualiza sus datos personales.
+  - Body: `email?`, `password?`, `telefono?`, `id_cobertura?`. Tiene que venir al menos uno.
+  - Otra clave (`nombre`, `dni`, `rol`, etc.) da `400`. Un email usado por otro usuario da `409`.
+  - La contraseña se guarda hasheada. Devuelve el perfil actualizado y queda registrado en la auditoría.
 
 ### Coberturas
 
@@ -152,7 +157,7 @@ Body de alta/modificación: `{ "nombre", "direccion", "telefono" }` (nombre máx
 - `POST /especialidades` — alta. Body: `{ "descripcion": "..." }` (máx. 30 caracteres).
 - `GET /especialidades` — listado.
 - `PUT /especialidades/:id` — modificación. Body: `{ "descripcion": "..." }`.
-- `DELETE /especialidades/:id` — baja. `409` si tiene filas en `medico_especialidad`.
+- `DELETE /especialidades/:id` — baja. `409` si tiene filas en `medico_especialidad` o si se usa en la agenda.
 
 ### Agenda (roles `operador` | `medico`)
 
@@ -346,6 +351,88 @@ Query opcionales (todos combinables):
 Cada log contiene: `id`, `id_usuario`, `accion`, `entidad`, `detalle`, `fecha`.
 
 Respuestas: `200`, `400` (filtros inválidos), `401`, `403`.
+
+### Usuarios (solo `admin`)
+
+Gestión de usuarios para el administrador. Todas las rutas requieren token de un `admin` (`401` sin token, `403` con otro rol). Nunca se devuelve el campo `password`.
+
+- `GET /usuarios`: listado paginado con filtros.
+- `GET /usuarios/:id`: detalle del usuario. Incluye `especialidades` (`[]` si no es médico).
+- `POST /usuarios`: alta de `operador`, `medico` o `admin`. Responde `201`.
+- `PUT /usuarios/:id`: edición de un usuario de cualquier rol, incluido `paciente`.
+
+**Paginación de `GET /usuarios`**
+
+| Parámetro | Tipo | Por defecto | Descripción |
+|-----------|------|-------------|-------------|
+| `nombre` | string (máx. 30) | — | Contiene el texto |
+| `apellido` | string (máx. 30) | — | Contiene el texto |
+| `rol` | `admin` \| `operador` \| `medico` \| `paciente` | — | Igualdad |
+| `id_sede` | entero positivo | — | Igualdad |
+| `pagina` | entero positivo | `1` | Página pedida |
+| `limite` | entero de 1 a 50 | `10` | Usuarios por página (máximo `50`) |
+
+Un parámetro vacío (`?nombre=`) se ignora y uno inválido da `400`. El orden es por apellido, nombre e id. Una página posterior a la última devuelve `items` vacío. Respuesta en `datos`:
+
+```json
+{
+  "items": [
+    {
+      "id": 3, "nombre": "Ana", "apellido": "Lopez", "dni": "20111222",
+      "email": "alopez@clinica.com", "telefono": "1100000000",
+      "fecha_nacimiento": "1985-03-10", "rol": "medico",
+      "id_sede": 1, "sede": "Sede Centro",
+      "id_cobertura": null, "cobertura": null
+    }
+  ],
+  "total": 13,
+  "pagina": 1,
+  "limite": 10,
+  "total_paginas": 2
+}
+```
+
+**Campos de alta y edición**
+
+| Campo | Regla |
+|-------|-------|
+| `nombre`, `apellido` | Obligatorios, máx. 30 caracteres |
+| `dni` | 7 u 8 dígitos, único |
+| `email` | Formato válido, máx. 30 caracteres, único |
+| `password` | Mínimo 6 caracteres. Obligatorio en el alta, opcional en la edición (si no se envía, no cambia) |
+| `telefono` | 6 a 10 dígitos |
+| `fecha_nacimiento` | `YYYY-MM-DD`, no posterior a hoy |
+| `rol` | Solo en el alta: `operador`, `medico` o `admin` |
+
+| Rol | `id_sede` | `especialidades` (array de ids) | `id_cobertura` |
+|-----|-----------|----------------------------------|----------------|
+| `operador` | Obligatoria | No | No |
+| `medico` | Obligatoria | Obligatorias | No |
+| `admin` | No tiene sede | No | No |
+| `paciente` (solo edición) | No | No | Obligatoria |
+
+Mandar un campo que no corresponde al rol da `400`. Los pacientes se dan de alta con `POST /auth/registro`.
+
+**Reglas de la edición**
+
+- **El administrador no puede cambiar el rol de un usuario.** Si se envía `rol` distinto del actual, da `400`. Si es igual, se ignora.
+- Para un médico, `especialidades` reemplaza todas las que tenía. Si se quita una especialidad que el médico tiene en una agenda de hoy en adelante, da `409`.
+- Si cambia la sede de un operador o un médico, el cambio se aplica en su próximo login, porque `id_sede` viaja en el token.
+
+Cada alta y cada modificación quedan en la auditoría (`entidad = usuario`). Respuestas: `200`/`201`, `400`, `401`, `403`, `404`, `409` (DNI o email duplicado, o especialidad con agenda).
+
+---
+
+## Cambios de backend para la entrega final
+
+Endpoints nuevos:
+
+- `GET /usuarios`, `GET /usuarios/:id`, `POST /usuarios` y `PUT /usuarios/:id`: gestión de usuarios del administrador (ver [Usuarios](#usuarios-solo-admin)).
+- `PATCH /auth/perfil`: el paciente actualiza sus datos personales (ver [Auth](#auth)).
+
+Endpoints modificados:
+
+- `DELETE /especialidades/:id`: ahora también responde `409` si la especialidad se usa en la agenda. Antes la base rechazaba el borrado y la API devolvía `500`.
 
 ---
 
