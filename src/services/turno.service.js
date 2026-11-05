@@ -106,9 +106,19 @@ function seSolapan(entradaA, salidaA, entradaB, salidaB) {
 
 function normalizarFechaRespuesta(fecha) {
   if (fecha instanceof Date) {
-    return fecha.toISOString().slice(0, 10);
+    // mysql2 entrega los DATE como medianoche local: se leen los componentes locales
+    // (toISOString() correría el día en servidores con zona horaria al este de UTC).
+    const mm = String(fecha.getMonth() + 1).padStart(2, '0');
+    const dd = String(fecha.getDate()).padStart(2, '0');
+    return `${fecha.getFullYear()}-${mm}-${dd}`;
   }
   return fecha;
+}
+
+// "2026-11-06" + "10:00:00" -> "06/11/2026 a las 10:00", el formato que ve el usuario.
+function textoFechaHora(fecha, hora) {
+  const [anio, mes, dia] = String(normalizarFechaRespuesta(fecha)).split('-');
+  return `${dia}/${mes}/${anio} a las ${String(hora).slice(0, 5)}`;
 }
 
 function parsearDatosTurno(body, usuario) {
@@ -418,7 +428,7 @@ export async function crearTurno(body, usuario) {
   await crearNotificacion(
     datos.id_paciente,
     'turno_creado',
-    `Turno confirmado para el ${datos.fecha} a las ${datos.hora}`
+    `Turno confirmado para el ${textoFechaHora(datos.fecha, datos.hora)}`
   );
 
   return mapearTurno({
@@ -445,7 +455,7 @@ export async function cancelarTurno(id, usuario) {
   await crearNotificacion(
     turno.id_paciente,
     'turno_cancelado',
-    `Turno cancelado para el ${normalizarFechaRespuesta(turno.fecha)} a las ${turno.hora}`
+    `Turno cancelado para el ${textoFechaHora(turno.fecha, turno.hora)}`
   );
 
   return mapearTurno({ ...turno, estado: 'cancelado' });
@@ -531,7 +541,7 @@ export async function atenderTurno(id, usuario, body = {}) {
   await crearNotificacion(
     turno.id_paciente,
     'turno_atendido',
-    `Turno atendido el ${normalizarFechaRespuesta(turno.fecha)} a las ${turno.hora}`
+    `Turno atendido el ${textoFechaHora(turno.fecha, turno.hora)}`
   );
 
   const respuesta = mapearTurno({ ...turno, estado: 'atendido' });
