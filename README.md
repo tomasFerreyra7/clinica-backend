@@ -20,18 +20,21 @@ Header en rutas protegidas: `Authorization: Bearer <token>`.
 pnpm install
 ```
 
-Crear la base y cargar el script:
-
-```sql
-CREATE DATABASE clinica;
-```
+Crear la base con el esquema y aplicar las migraciones (`script.sql` crea la base `clinica` y carga sedes y coberturas base):
 
 ```bash
-mysql -u root -p clinica < script.sql
+mysql -u root -p < script.sql
 mysql -u root -p clinica < migrations/001_soft_delete_sede_cobertura.sql
+mysql -u root -p clinica < migrations/002_auditoria.sql
 ```
 
 Copiar `.env.example` a `.env` y completar credenciales.
+
+Opcional, cargar datos de prueba (usuarios, agendas y turnos; todos con clave `Test1234!`):
+
+```bash
+pnpm seed
+```
 
 ## Correr
 
